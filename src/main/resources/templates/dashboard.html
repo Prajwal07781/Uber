@@ -1,0 +1,163 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Uber Java Full Stack</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+    <link rel="stylesheet" href="/css/app.css">
+</head>
+<body>
+<header class="topbar">
+    <div>
+        <p class="eyebrow">Full Stack Java Uber Clone</p>
+        <h1 id="pageTitle">Login</h1>
+    </div>
+    <div class="top-actions">
+        <span id="sessionLabel">Not signed in</span>
+        <button id="logoutBtn" class="ghost hidden">Logout</button>
+    </div>
+</header>
+
+<main class="shell">
+    <section id="authView" class="auth-layout">
+        <div class="hero">
+            <p class="eyebrow">Professional cab booking system</p>
+            <h2>Book rides with live maps, driver matching, OTP start, payment, and ratings.</h2>
+            <div class="role-tabs">
+                <button class="role-tab active" data-role="RIDER">User</button>
+                <button class="role-tab" data-role="DRIVER">Driver</button>
+            </div>
+        </div>
+
+        <div class="panel auth-card">
+            <div class="section-title">
+                <h2 id="authTitle">User Login</h2>
+                <button id="switchAuthBtn">Create account</button>
+            </div>
+            <form id="authForm">
+                <label class="signup-only hidden">Full name
+                    <input id="name" placeholder="Enter name">
+                </label>
+                <label>Phone
+                    <input id="phone" value="9000000001" placeholder="Phone number" required>
+                </label>
+                <label>Password
+                    <input id="password" type="password" value="password" required>
+                </label>
+                <div id="driverSignupFields" class="signup-only hidden">
+                    <label>Vehicle name
+                        <input id="vehicleName" placeholder="Honda City">
+                    </label>
+                    <label>Vehicle number
+                        <input id="vehicleNumber" placeholder="KA 05 AB 1234">
+                    </label>
+                    <label>Vehicle type
+                        <select id="signupVehicleType">
+                            <option value="BIKE">Bike</option>
+                            <option value="AUTO">Auto</option>
+                            <option value="CAB">Cab (5 seater)</option>
+                            <option value="SUV">SUV (7 seater)</option>
+                        </select>
+                    </label>
+                </div>
+                <button class="primary" type="submit" id="authSubmit">Login</button>
+                <p id="authMessage" class="message"></p>
+            </form>
+        </div>
+    </section>
+
+    <section id="riderView" class="app-grid hidden">
+        <div class="dashboard-strip">
+            <div><strong id="riderTripCount">0</strong><span>Total bookings</span></div>
+            <div><strong id="riderActiveStatus">Idle</strong><span>Current trip</span></div>
+            <div><strong id="riderSelectedVehicle">Cab</strong><span>Selected vehicle</span></div>
+        </div>
+
+        <div class="panel booking">
+            <div class="section-title">
+                <h2>Book Ride</h2>
+                <span id="riderStatus">Choose pickup and destination</span>
+            </div>
+            <form id="rideForm">
+                <div class="grid two">
+                    <label class="place-field">Pickup
+                        <input id="pickupAddress" value="MG Road, Bengaluru" autocomplete="off" required>
+                        <div id="pickupResults" class="suggestions"></div>
+                    </label>
+                    <label class="place-field">Destination
+                        <input id="dropAddress" value="Indiranagar, Bengaluru" autocomplete="off" required>
+                        <div id="dropResults" class="suggestions"></div>
+                    </label>
+                </div>
+                <div class="vehicle-row" id="vehicleOptions"></div>
+                <div class="actions">
+                    <button type="button" id="estimateBtn">Show vehicles</button>
+                    <button type="submit" class="primary">Confirm Ride</button>
+                </div>
+            </form>
+        </div>
+
+        <div class="panel map-panel">
+            <div class="section-title">
+                <h2>Live Map</h2>
+                <span id="mapHint">Pickup to destination</span>
+            </div>
+            <div class="map live-map" id="riderMap"></div>
+            <div class="progress"><span id="riderProgress"></span></div>
+        </div>
+
+        <div class="panel">
+            <div class="section-title">
+                <h2>Available Drivers</h2>
+                <span id="availableDriverCount">0 online</span>
+            </div>
+            <div id="availableDrivers" class="driver-list"></div>
+        </div>
+
+        <div class="panel">
+            <div class="section-title">
+                <h2>Your Ride</h2>
+                <button id="refreshRiderBtn">Refresh</button>
+            </div>
+            <div id="riderRide" class="ride-list"></div>
+        </div>
+    </section>
+
+    <section id="driverView" class="app-grid hidden">
+        <div class="dashboard-strip">
+            <div><strong id="driverRequestCount">0</strong><span>New requests</span></div>
+            <div><strong id="driverTripCount">0</strong><span>Assigned trips</span></div>
+            <div><strong id="driverOnlineStatus">Online</strong><span>Availability</span></div>
+        </div>
+
+        <div class="panel">
+            <div class="section-title">
+                <h2>New Ride Requests</h2>
+                <button id="refreshDriverBtn">Refresh</button>
+            </div>
+            <div id="driverRequests" class="ride-list"></div>
+        </div>
+
+        <div class="panel map-panel">
+            <div class="section-title">
+                <h2>Driver Tracking</h2>
+                <span id="driverMapHint">Accept a ride</span>
+            </div>
+            <div class="map live-map" id="driverMap"></div>
+            <div class="progress"><span id="driverProgress"></span></div>
+        </div>
+
+        <div class="panel driver-active">
+            <div class="section-title">
+                <h2>Accepted Trips</h2>
+            </div>
+            <div id="driverTrips" class="ride-list"></div>
+        </div>
+    </section>
+</main>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="/js/app.js?v=vehicles-db-1"></script>
+</body>
+</html>
