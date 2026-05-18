@@ -13,4 +13,17 @@ if ($listener) {
 }
 
 Write-Host "Starting UberJavaFullStack on http://localhost:$port"
-.\mvnw.cmd spring-boot:run
+$jarPath = Join-Path $PSScriptRoot "target\uber-java-fullstack-0.0.1-SNAPSHOT.jar"
+
+if (Test-Path $jarPath) {
+    java -jar $jarPath
+} else {
+    $mavenFromWrapperCache = Get-ChildItem "$env:USERPROFILE\.m2\wrapper\dists" -Recurse -Filter mvn.cmd -ErrorAction SilentlyContinue |
+        Select-Object -First 1
+
+    if ($mavenFromWrapperCache) {
+        & $mavenFromWrapperCache.FullName spring-boot:run
+    } else {
+        cmd /c mvnw.cmd spring-boot:run
+    }
+}

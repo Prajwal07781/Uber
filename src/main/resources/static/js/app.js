@@ -115,7 +115,7 @@ function markerIcon(label, className) {
 function carIcon() {
     return L.divIcon({
         className: "map-icon car-icon",
-        html: "CAR",
+        html: "Ride",
         iconSize: [42, 28],
         iconAnchor: [21, 14]
     });
@@ -290,11 +290,12 @@ async function requestRide(event) {
     event.preventDefault();
     try {
         await syncPlacesFromInputs();
+        setMessage("#riderStatus", "Sending request to nearby drivers...");
         state.latestRide = await api("/api/rides", {
             method: "POST",
             body: JSON.stringify(ridePayload())
         });
-        setMessage("#riderStatus", "Waiting for driver");
+        showRideNotice(state.latestRide);
         await refreshRider();
     } catch (error) {
         setMessage("#riderStatus", error.message);
@@ -311,6 +312,7 @@ async function refreshRider() {
 
 async function renderRiderRide() {
     const ride = state.latestRide;
+    showRideNotice(ride);
     if (!ride) {
         $("#riderRide").innerHTML = `<p class="subtle">No ride yet. Confirm a ride to send it to nearby drivers.</p>`;
         $("#riderProgress").style.width = "0%";
@@ -325,12 +327,35 @@ async function renderRiderRide() {
                 <span class="pill ${ride.status}">${ride.status}</span>
             </div>
             <span>${ride.vehicleLabel} | Rs ${ride.fare} | ${ride.distanceKm} km</span>
-            <span class="subtle">${ride.driverName === "Searching" ? "Waiting for driver acceptance" : `${ride.driverName} | ${ride.vehicle}`}</span>
+            <span class="subtle">${ride.driverName === "Searching" ? "Waiting for driver to confirm your ride" : `${ride.driverName} | ${ride.vehicle} | ${ride.driverPhone}`}</span>
+            ${ride.status === "REQUESTED" ? `<div class="waiting-card"><span class="spinner"></span><div><strong>Waiting for driver to confirm</strong><span>Nearby ${ride.vehicleLabel.toLowerCase()} drivers can see your request now.</span></div></div>` : ""}
             ${ride.status === "ACCEPTED" ? `<div class="otp-box">Start OTP: <strong>${ride.otp}</strong></div>` : ""}
             ${ride.status === "COMPLETED" && !ride.paid ? `<button class="primary" onclick="payRide(${ride.id})">Pay Rs ${ride.fare}</button>` : ""}
             ${ride.status === "COMPLETED" && ride.paid ? `<div class="actions"><button onclick="rateRide(${ride.id}, 5)">Rate 5</button><button onclick="rateRide(${ride.id}, 4)">Rate 4</button></div>` : ""}
+            ${["REQUESTED", "ACCEPTED"].includes(ride.status) ? `<button onclick="cancelRide(${ride.id})">Cancel ride</button>` : ""}
         </article>
     `;
+}
+
+function showRideNotice(ride) {
+    const banner = $("#riderNotice");
+    if (!banner) return;
+    if (!ride || ["COMPLETED", "CANCELLED"].includes(ride.status)) {
+        banner.classList.add("hidden");
+        setMessage("#riderStatus", ride?.status === "COMPLETED" ? "Trip completed" : "Choose pickup and destination");
+        return;
+    }
+    const messages = {
+        REQUESTED: ["Waiting for driver to confirm", "Your request is live. A driver will appear here after accepting the ride."],
+        ACCEPTED: ["Driver confirmed your ride", `${ride.driverName} is assigned. Share OTP ${ride.otp} only after boarding.`],
+        IN_PROGRESS: ["Ride in progress", `Live tracking is active. Trip progress is ${ride.progressPercent}%.`]
+    };
+    const [title, text] = messages[ride.status] || [ride.status, "Ride status updated."];
+    $("#riderNoticeTitle").textContent = title;
+    $("#riderNoticeText").textContent = text;
+    setMessage("#riderStatus", title);
+    banner.dataset.status = ride.status;
+    banner.classList.remove("hidden");
 }
 
 async function refreshDriver() {
@@ -428,6 +453,11 @@ async function payRide(id) {
     await refreshRider();
 }
 
+async function cancelRide(id) {
+    await api(`/api/rides/${id}/cancel`, { method: "PATCH", body: "{}" });
+    await refreshRider();
+}
+
 async function rateRide(id, rating) {
     await api(`/api/rides/${id}/rate`, {
         method: "PATCH",
@@ -448,7 +478,7 @@ function shortName(value) {
 }
 
 function mapText(ride) {
-    if (ride.status === "REQUESTED") return "Waiting for driver";
+    if (ride.status === "REQUESTED") return "Waiting for driver to confirm";
     if (ride.status === "ACCEPTED") return "Driver accepted | share OTP";
     if (ride.status === "IN_PROGRESS") return `Travelling | ${ride.progressPercent}%`;
     if (ride.status === "COMPLETED" && !ride.paid) return "Arrived | payment pending";

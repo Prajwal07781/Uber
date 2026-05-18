@@ -3,11 +3,12 @@
     --muted: #68737d;
     --line: #dfe6e9;
     --paper: #ffffff;
-    --surface: #f3f6f7;
+    --surface: #f6f7f8;
     --green: #097a53;
     --blue: #1768cf;
     --yellow: #f1b51c;
     --red: #c64242;
+    --shadow: 0 18px 42px rgba(18, 24, 28, 0.08);
 }
 
 * {
@@ -17,7 +18,9 @@
 body {
     margin: 0;
     font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-    background: var(--surface);
+    background:
+        linear-gradient(180deg, #eef1f3 0, var(--surface) 230px),
+        var(--surface);
     color: var(--ink);
 }
 
@@ -28,12 +31,13 @@ body {
 .topbar {
     min-height: 96px;
     padding: 22px clamp(18px, 4vw, 48px);
-    background: #101112;
+    background: #0c0d0e;
     color: white;
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: 20px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
 }
 
 .topbar h1,
@@ -44,12 +48,33 @@ p {
 
 .topbar h1 {
     margin-bottom: 0;
+    font-size: clamp(1.45rem, 2.2vw, 2.15rem);
+    letter-spacing: 0;
+}
+
+.brand-lockup {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+}
+
+.brand-mark {
+    width: 44px;
+    height: 44px;
+    border-radius: 8px;
+    background: white;
+    color: #0c0d0e;
+    display: grid;
+    place-items: center;
+    font-weight: 950;
+    font-size: 1.35rem;
 }
 
 .top-actions {
     display: flex;
     align-items: center;
     gap: 12px;
+    color: rgba(255, 255, 255, 0.82);
 }
 
 .eyebrow {
@@ -62,7 +87,7 @@ p {
 
 .shell {
     width: min(1320px, calc(100% - 32px));
-    margin: 24px auto 48px;
+    margin: 22px auto 48px;
 }
 
 .auth-layout {
@@ -113,11 +138,12 @@ p {
 .app-grid {
     display: grid;
     grid-template-columns: minmax(0, 1.1fr) minmax(360px, 0.9fr);
-    gap: 18px;
+    gap: 16px;
 }
 
 .booking,
 .driver-active,
+.status-banner,
 .dashboard-strip {
     grid-column: 1 / -1;
 }
@@ -132,7 +158,8 @@ p {
     background: var(--paper);
     border: 1px solid var(--line);
     border-radius: 8px;
-    padding: 16px;
+    padding: 18px;
+    box-shadow: 0 10px 28px rgba(18, 24, 28, 0.05);
 }
 
 .dashboard-strip strong {
@@ -144,6 +171,7 @@ p {
 .dashboard-strip span {
     color: var(--muted);
     font-weight: 700;
+    font-size: 0.9rem;
 }
 
 .panel {
@@ -151,6 +179,7 @@ p {
     border: 1px solid var(--line);
     border-radius: 8px;
     padding: 18px;
+    box-shadow: var(--shadow);
 }
 
 .auth-card {
@@ -167,6 +196,8 @@ p {
 
 .section-title h2 {
     margin-bottom: 0;
+    font-size: 1.08rem;
+    letter-spacing: 0;
 }
 
 .section-title span,
@@ -209,6 +240,14 @@ select {
     padding: 10px 12px;
     font: inherit;
     background: white;
+    outline: none;
+    transition: border-color 0.18s ease, box-shadow 0.18s ease;
+}
+
+input:focus,
+select:focus {
+    border-color: #111;
+    box-shadow: 0 0 0 3px rgba(21, 24, 25, 0.1);
 }
 
 button {
@@ -220,11 +259,18 @@ button {
     font-weight: 800;
     padding: 11px 14px;
     cursor: pointer;
+    min-height: 42px;
+    transition: transform 0.18s ease, background 0.18s ease, box-shadow 0.18s ease;
+}
+
+button:hover {
+    transform: translateY(-1px);
 }
 
 button.primary {
     background: var(--ink);
     color: white;
+    box-shadow: 0 10px 24px rgba(21, 24, 25, 0.18);
 }
 
 button.ghost {
@@ -251,11 +297,18 @@ button.ghost {
     grid-template-columns: 58px 1fr;
     column-gap: 12px;
     align-items: center;
+    background: white;
+    transition: border-color 0.18s ease, box-shadow 0.18s ease, transform 0.18s ease;
+}
+
+.vehicle-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 14px 30px rgba(18, 24, 28, 0.08);
 }
 
 .vehicle-card.active {
     border-color: var(--ink);
-    background: #f5fbf8;
+    background: #f8faf9;
 }
 
 .vehicle-card strong {
@@ -296,7 +349,7 @@ button.ghost {
 
 .map {
     position: relative;
-    min-height: 320px;
+    min-height: 340px;
     overflow: hidden;
     border-radius: 8px;
     background: #e4eaed;
@@ -361,8 +414,8 @@ button.ghost {
     margin-left: -21px !important;
     margin-top: -14px !important;
     border-radius: 8px;
-    background: var(--yellow);
-    color: #111;
+    background: #111;
+    color: white;
     box-shadow: 0 8px 18px rgba(0, 0, 0, 0.2);
 }
 
@@ -394,6 +447,7 @@ button.ghost {
     padding: 14px;
     display: grid;
     gap: 10px;
+    background: #fff;
 }
 
 .ride-head,
@@ -410,6 +464,11 @@ button.ghost {
     background: #edf2f5;
     font-size: 0.82rem;
     font-weight: 900;
+}
+
+.pill.REQUESTED {
+    background: #fff5d6;
+    color: #7a5600;
 }
 
 .pill.ACCEPTED,
@@ -435,6 +494,84 @@ button.ghost {
     padding: 12px;
 }
 
+.status-banner {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 16px 18px;
+    border: 1px solid #f0d285;
+    border-radius: 8px;
+    background: #fff8e6;
+    box-shadow: var(--shadow);
+}
+
+.status-banner[data-status="ACCEPTED"] {
+    border-color: #b9dfff;
+    background: #edf7ff;
+}
+
+.status-banner[data-status="IN_PROGRESS"] {
+    border-color: #b9e5d5;
+    background: #eefbf6;
+}
+
+.status-banner strong,
+.status-banner span {
+    display: block;
+}
+
+.status-banner span {
+    margin-top: 3px;
+    color: #53616a;
+    font-weight: 700;
+}
+
+.status-icon,
+.spinner {
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    border: 3px solid rgba(21, 24, 25, 0.18);
+    border-top-color: var(--ink);
+    animation: spin 0.9s linear infinite;
+}
+
+.status-banner[data-status="ACCEPTED"] .status-icon,
+.status-banner[data-status="IN_PROGRESS"] .status-icon {
+    animation: none;
+    border: 0;
+    background: var(--green);
+    box-shadow: inset 0 0 0 6px white, 0 0 0 2px var(--green);
+}
+
+.waiting-card {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px;
+    border-radius: 8px;
+    background: #fff8e6;
+    border: 1px solid #f0d285;
+}
+
+.waiting-card strong,
+.waiting-card span {
+    display: block;
+}
+
+.waiting-card span {
+    margin-top: 2px;
+    color: #6b5a2a;
+    font-size: 0.9rem;
+    font-weight: 700;
+}
+
+@keyframes spin {
+    to {
+        transform: rotate(360deg);
+    }
+}
+
 .otp-input {
     max-width: 170px;
 }
@@ -453,7 +590,23 @@ button.ghost {
         flex-direction: column;
     }
 
+    .top-actions {
+        width: 100%;
+        justify-content: space-between;
+    }
+
     .hero {
         min-height: 360px;
+    }
+
+    .section-title,
+    .ride-head,
+    .driver-head {
+        align-items: flex-start;
+        flex-direction: column;
+    }
+
+    .status-banner {
+        align-items: flex-start;
     }
 }

@@ -5,13 +5,16 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Uber Java Full Stack</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
-    <link rel="stylesheet" href="/css/app.css">
+    <link rel="stylesheet" href="/css/app.css?v=professional-waiting-2">
 </head>
 <body>
 <header class="topbar">
-    <div>
-        <p class="eyebrow">Full Stack Java Uber Clone</p>
-        <h1 id="pageTitle">Login</h1>
+    <div class="brand-lockup">
+        <span class="brand-mark">U</span>
+        <div>
+            <p class="eyebrow">Full Stack Java Uber Clone</p>
+            <h1 id="pageTitle">Login</h1>
+        </div>
     </div>
     <div class="top-actions">
         <span id="sessionLabel">Not signed in</span>
@@ -30,7 +33,7 @@
             </div>
         </div>
 
-        <div class="panel auth-card">
+        <div class="panel auth-card" id="authCard">
             <div class="section-title">
                 <h2 id="authTitle">User Login</h2>
                 <button id="switchAuthBtn">Create account</button>
@@ -74,9 +77,17 @@
             <div><strong id="riderSelectedVehicle">Cab</strong><span>Selected vehicle</span></div>
         </div>
 
+        <div id="riderNotice" class="status-banner hidden" role="status" aria-live="polite">
+            <div class="status-icon"></div>
+            <div>
+                <strong id="riderNoticeTitle">Waiting for driver to confirm</strong>
+                <span id="riderNoticeText">Your request has been sent to nearby drivers.</span>
+            </div>
+        </div>
+
         <div class="panel booking">
             <div class="section-title">
-                <h2>Book Ride</h2>
+                <h2>Book a ride</h2>
                 <span id="riderStatus">Choose pickup and destination</span>
             </div>
             <form id="rideForm">
@@ -93,7 +104,7 @@
                 <div class="vehicle-row" id="vehicleOptions"></div>
                 <div class="actions">
                     <button type="button" id="estimateBtn">Show vehicles</button>
-                    <button type="submit" class="primary">Confirm Ride</button>
+                    <button type="submit" class="primary">Confirm ride</button>
                 </div>
             </form>
         </div>
@@ -117,7 +128,7 @@
 
         <div class="panel">
             <div class="section-title">
-                <h2>Your Ride</h2>
+                <h2>Your ride</h2>
                 <button id="refreshRiderBtn">Refresh</button>
             </div>
             <div id="riderRide" class="ride-list"></div>
@@ -158,6 +169,6 @@
 </main>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-<script src="/js/app.js?v=vehicles-db-1"></script>
+<script src="/js/app.js?v=waiting-status-1"></script>
 </body>
 </html>
