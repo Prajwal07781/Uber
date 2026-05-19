@@ -3,6 +3,7 @@ package com.uberclone.controller;
 import com.uberclone.dto.FareEstimate;
 import com.uberclone.dto.RideRequest;
 import com.uberclone.dto.RideResponse;
+import com.uberclone.model.DriverProfile;
 import com.uberclone.model.VehicleType;
 import com.uberclone.repository.DriverProfileRepository;
 import com.uberclone.service.RideService;
@@ -106,49 +107,61 @@ public class RideApiController {
     @GetMapping("/drivers")
     public List<Map<String, Object>> drivers() {
         return driverRepository.findAll().stream()
-                .map(driver -> Map.<String, Object>ofEntries(
-                        entry("id", driver.getId()),
-                        entry("name", driver.getUser().getName()),
-                        entry("phone", driver.getUser().getPhone()),
-                        entry("rating", driver.getUser().getRating()),
-                        entry("vehicleType", driver.getVehicleType()),
-                        entry("vehicleLabel", driver.getVehicleType().getLabel()),
-                        entry("seats", driver.getVehicleType().getSeats()),
-                        entry("vehicle", driver.getVehicleName()),
-                        entry("number", driver.getVehicleNumber()),
-                        entry("available", driver.isAvailable()),
-                        entry("trips", driver.getCompletedTrips())))
+                .map(this::driverPayload)
                 .toList();
+    }
+
+    @GetMapping("/drivers/{id}")
+    public Map<String, Object> driver(@PathVariable Long id) {
+        return driverPayload(driverRepository.findById(id)
+                .orElseThrow(() -> new IllegalArgumentException("Driver not found")));
     }
 
     @GetMapping("/drivers/available")
     public List<Map<String, Object>> availableDrivers(@RequestParam VehicleType vehicleType) {
         return driverRepository.findByAvailableTrueAndVehicleType(vehicleType).stream()
-                .map(driver -> Map.<String, Object>ofEntries(
-                        entry("id", driver.getId()),
-                        entry("name", driver.getUser().getName()),
-                        entry("phone", driver.getUser().getPhone()),
-                        entry("rating", driver.getUser().getRating()),
-                        entry("vehicleType", driver.getVehicleType()),
-                        entry("vehicleLabel", driver.getVehicleType().getLabel()),
-                        entry("seats", driver.getVehicleType().getSeats()),
-                        entry("vehicle", driver.getVehicleName()),
-                        entry("number", driver.getVehicleNumber()),
-                        entry("available", driver.isAvailable()),
-                        entry("trips", driver.getCompletedTrips())))
+                .map(this::driverPayload)
                 .toList();
     }
 
     @PatchMapping("/drivers/{id}/availability")
     public ResponseEntity<Map<String, Object>> availability(@PathVariable Long id, @RequestBody Map<String, Boolean> body) {
         var driver = driverRepository.findById(id).orElseThrow(() -> new IllegalArgumentException("Driver not found"));
-        driver.setAvailable(body.getOrDefault("available", true));
+        boolean available = body.getOrDefault("available", true);
+        driver.setOnDuty(available);
+        driver.setAvailable(available);
         driverRepository.save(driver);
-        return ResponseEntity.ok(Map.of("id", id, "available", driver.isAvailable()));
+        return ResponseEntity.ok(driverPayload(driver));
     }
 
     @GetMapping("/vehicles")
     public VehicleType[] vehicles() {
         return VehicleType.values();
+    }
+
+    private Map<String, Object> driverPayload(DriverProfile driver) {
+        return Map.<String, Object>ofEntries(
+                entry("id", driver.getId()),
+                entry("name", driver.getUser().getName()),
+                entry("phone", driver.getUser().getPhone()),
+                entry("rating", driver.getUser().getRating()),
+                entry("ratingCount", driver.getRatingCount()),
+                entry("vehicleType", driver.getVehicleType()),
+                entry("vehicleLabel", driver.getVehicleType().getLabel()),
+                entry("seats", driver.getVehicleType().getSeats()),
+                entry("vehicle", driver.getVehicleName()),
+                entry("number", driver.getVehicleNumber()),
+                entry("available", driver.isAvailable()),
+                entry("onDuty", driver.isOnDuty()),
+                entry("workMinutesToday", driver.currentDutyMinutes()),
+                entry("workHoursLabel", workHoursLabel(driver.currentDutyMinutes())),
+                entry("workStatus", driver.dutyStatus()),
+                entry("safeDailyMinutes", DriverProfile.SAFE_DAILY_MINUTES),
+                entry("overtimeDailyMinutes", DriverProfile.OVERTIME_DAILY_MINUTES),
+                entry("trips", driver.getCompletedTrips()));
+    }
+
+    private String workHoursLabel(long minutes) {
+        return "%dh %02dm".formatted(minutes / 60, minutes % 60);
     }
 }

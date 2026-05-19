@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Uber Java Full Stack</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
-    <link rel="stylesheet" href="/css/app.css?v=professional-waiting-2">
+    <link rel="stylesheet" href="/css/app.css?v=safety-ratings-pro-1">
 </head>
 <body>
 <header class="topbar">
@@ -26,7 +26,7 @@
     <section id="authView" class="auth-layout">
         <div class="hero">
             <p class="eyebrow">Professional cab booking system</p>
-            <h2>Book rides with live maps, driver matching, OTP start, payment, and ratings.</h2>
+            <h2>Book safer rides with live maps, driver matching, OTP start, payment, safety hours, and star ratings.</h2>
             <div class="role-tabs">
                 <button class="role-tab active" data-role="RIDER">User</button>
                 <button class="role-tab" data-role="DRIVER">Driver</button>
@@ -139,7 +139,20 @@
         <div class="dashboard-strip">
             <div><strong id="driverRequestCount">0</strong><span>New requests</span></div>
             <div><strong id="driverTripCount">0</strong><span>Assigned trips</span></div>
+            <div><strong id="driverWorkHours">0h 00m</strong><span>Worked today</span></div>
             <div><strong id="driverOnlineStatus">Online</strong><span>Availability</span></div>
+        </div>
+
+        <div class="panel driver-safety-panel">
+            <div class="section-title">
+                <h2>Driver Safety Hours</h2>
+                <span id="driverSafetyBadge" class="safety-badge SAFE">Safe hours</span>
+            </div>
+            <p id="driverSafetyText" class="subtle">Safe hours after 0h 00m on duty today.</p>
+            <div class="safety-meter"><span id="driverSafetyMeter"></span></div>
+            <div class="actions">
+                <button id="driverDutyToggle">Go offline and rest</button>
+            </div>
         </div>
 
         <div class="panel">
@@ -169,6 +182,6 @@
 </main>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-<script src="/js/app.js?v=waiting-status-1"></script>
+<script src="/js/app.js?v=safety-ratings-pro-1"></script>
 </body>
 </html>

@@ -47,15 +47,23 @@ public class AuthService {
         return UserResponse.from(user, driverId);
     }
 
+    @Transactional
     public UserResponse login(LoginRequest request) {
         AppUser user = userRepository.findByPhoneAndRole(request.phone(), request.role())
                 .orElseThrow(() -> new IllegalArgumentException("Account not found"));
         if (!user.getPassword().equals(request.password())) {
             throw new IllegalArgumentException("Invalid password");
         }
-        Long driverId = request.role() == Role.DRIVER
-                ? driverRepository.findByUserId(user.getId()).map(DriverProfile::getId).orElse(null)
-                : null;
+        Long driverId = null;
+        if (request.role() == Role.DRIVER) {
+            DriverProfile driver = driverRepository.findByUserId(user.getId()).orElse(null);
+            if (driver != null) {
+                driver.startDuty();
+                driver.setAvailable(true);
+                driverRepository.save(driver);
+                driverId = driver.getId();
+            }
+        }
         return UserResponse.from(user, driverId);
     }
 

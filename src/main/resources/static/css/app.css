@@ -1,14 +1,16 @@
 :root {
-    --ink: #151819;
-    --muted: #68737d;
-    --line: #dfe6e9;
+    --ink: #111827;
+    --muted: #64717d;
+    --line: #d8e0e6;
     --paper: #ffffff;
-    --surface: #f6f7f8;
-    --green: #097a53;
-    --blue: #1768cf;
-    --yellow: #f1b51c;
-    --red: #c64242;
-    --shadow: 0 18px 42px rgba(18, 24, 28, 0.08);
+    --surface: #f3f6f8;
+    --green: #087f5b;
+    --blue: #1b66d2;
+    --yellow: #e8a400;
+    --red: #c73d4a;
+    --navy: #101c2f;
+    --teal: #0f766e;
+    --shadow: 0 18px 44px rgba(16, 28, 47, 0.1);
 }
 
 * {
@@ -19,7 +21,7 @@ body {
     margin: 0;
     font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
     background:
-        linear-gradient(180deg, #eef1f3 0, var(--surface) 230px),
+        linear-gradient(180deg, #eaf0f4 0, var(--surface) 260px),
         var(--surface);
     color: var(--ink);
 }
@@ -31,7 +33,8 @@ body {
 .topbar {
     min-height: 96px;
     padding: 22px clamp(18px, 4vw, 48px);
-    background: #0c0d0e;
+    background:
+        linear-gradient(135deg, #101c2f 0%, #13283b 58%, #0f766e 130%);
     color: white;
     display: flex;
     align-items: center;
@@ -63,7 +66,7 @@ p {
     height: 44px;
     border-radius: 8px;
     background: white;
-    color: #0c0d0e;
+    color: var(--navy);
     display: grid;
     place-items: center;
     font-weight: 950;
@@ -79,7 +82,7 @@ p {
 
 .eyebrow {
     margin-bottom: 6px;
-    color: #8ce3bf;
+    color: #82e5ce;
     font-size: 0.78rem;
     text-transform: uppercase;
     font-weight: 800;
@@ -105,7 +108,7 @@ p {
     flex-direction: column;
     justify-content: flex-end;
     background:
-        linear-gradient(rgba(10, 14, 15, 0.18), rgba(10, 14, 15, 0.72)),
+        linear-gradient(rgba(16, 28, 47, 0.1), rgba(16, 28, 47, 0.78)),
         url("https://images.unsplash.com/photo-1449965408869-eaa3f722e40d?auto=format&fit=crop&w=1400&q=80");
     background-size: cover;
     background-position: center;
@@ -150,7 +153,7 @@ p {
 
 .dashboard-strip {
     display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
     gap: 14px;
 }
 
@@ -159,7 +162,7 @@ p {
     border: 1px solid var(--line);
     border-radius: 8px;
     padding: 18px;
-    box-shadow: 0 10px 28px rgba(18, 24, 28, 0.05);
+    box-shadow: 0 10px 28px rgba(16, 28, 47, 0.06);
 }
 
 .dashboard-strip strong {
@@ -268,9 +271,14 @@ button:hover {
 }
 
 button.primary {
-    background: var(--ink);
+    background: linear-gradient(135deg, var(--navy), #153d4c);
     color: white;
-    box-shadow: 0 10px 24px rgba(21, 24, 25, 0.18);
+    box-shadow: 0 10px 24px rgba(16, 28, 47, 0.2);
+}
+
+button.danger {
+    background: var(--red);
+    color: white;
 }
 
 button.ghost {
@@ -307,8 +315,8 @@ button.ghost {
 }
 
 .vehicle-card.active {
-    border-color: var(--ink);
-    background: #f8faf9;
+    border-color: var(--teal);
+    background: #f0fbf8;
 }
 
 .vehicle-card strong {
@@ -430,7 +438,7 @@ button.ghost {
     display: block;
     height: 100%;
     width: 0;
-    background: var(--green);
+    background: linear-gradient(90deg, var(--teal), var(--green));
     transition: width 0.35s ease;
 }
 
@@ -448,6 +456,7 @@ button.ghost {
     display: grid;
     gap: 10px;
     background: #fff;
+    box-shadow: 0 8px 20px rgba(16, 28, 47, 0.05);
 }
 
 .ride-head,
@@ -557,6 +566,111 @@ button.ghost {
 .waiting-card strong,
 .waiting-card span {
     display: block;
+}
+
+.stars {
+    color: #e2a600;
+    font-weight: 950;
+    letter-spacing: 0;
+    white-space: nowrap;
+}
+
+.star-actions {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+}
+
+.star-actions button {
+    width: 42px;
+    padding: 0;
+    color: #c48a00;
+    background: #fff7db;
+    border: 1px solid #f2d078;
+    font-size: 1.1rem;
+}
+
+.star-actions button:hover {
+    background: #ffe9a8;
+    color: #8b6100;
+}
+
+.rating-box,
+.rating-summary,
+.driver-safety {
+    display: grid;
+    gap: 8px;
+    border: 1px solid #e4ebef;
+    border-radius: 8px;
+    padding: 12px;
+    background: #f8fbfc;
+}
+
+.rating-summary {
+    grid-template-columns: auto 1fr;
+    align-items: center;
+}
+
+.metric-row {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    flex-wrap: wrap;
+    color: #33424c;
+    font-weight: 800;
+    font-size: 0.9rem;
+}
+
+.safety-badge {
+    border-radius: 999px;
+    padding: 5px 9px;
+    font-size: 0.78rem;
+    font-weight: 950;
+    white-space: nowrap;
+}
+
+.safety-badge.SAFE {
+    color: #075f45;
+    background: #dff8ef;
+}
+
+.safety-badge.NEEDS_REST {
+    color: #7a5600;
+    background: #fff1bf;
+}
+
+.safety-badge.OVERTIME {
+    color: #9f1f2e;
+    background: #ffe1e5;
+}
+
+.safety-badge.UNKNOWN {
+    color: #4b5563;
+    background: #eef2f5;
+}
+
+.driver-safety-panel {
+    grid-column: 1 / -1;
+    background:
+        linear-gradient(135deg, rgba(15, 118, 110, 0.08), rgba(27, 102, 210, 0.06)),
+        var(--paper);
+}
+
+.safety-meter {
+    height: 12px;
+    border-radius: 999px;
+    background: #e4ebef;
+    overflow: hidden;
+    margin: 12px 0;
+}
+
+.safety-meter span {
+    display: block;
+    width: 0;
+    height: 100%;
+    border-radius: inherit;
+    background: linear-gradient(90deg, var(--green), var(--yellow), var(--red));
+    transition: width 0.35s ease;
 }
 
 .waiting-card span {

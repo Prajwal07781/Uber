@@ -2,6 +2,7 @@ const state = {
     authMode: "login",
     role: "RIDER",
     user: null,
+    driver: null,
     vehicleType: "CAB",
     latestRide: null,
     pickup: { name: "MG Road, Bengaluru", lat: 12.9758, lng: 77.6050 },
@@ -36,6 +37,43 @@ async function api(path, options = {}) {
 
 function setMessage(selector, message) {
     $(selector).textContent = message;
+}
+
+function formatWorkMinutes(minutes = 0) {
+    const safeMinutes = Math.max(0, Number(minutes) || 0);
+    return `${Math.floor(safeMinutes / 60)}h ${String(safeMinutes % 60).padStart(2, "0")}m`;
+}
+
+function workStatusLabel(status) {
+    return {
+        SAFE: "Safe hours",
+        NEEDS_REST: "Rest advised",
+        OVERTIME: "Overtime risk",
+        UNKNOWN: "Not assigned"
+    }[status] || status;
+}
+
+function starDisplay(rating = 0) {
+    const rounded = Math.round(Number(rating) || 0);
+    return `<span class="stars" aria-label="${rating} out of 5">${[1, 2, 3, 4, 5].map(star => star <= rounded ? "★" : "☆").join("")}</span>`;
+}
+
+function ratingControl(ride) {
+    if (ride.riderRating) {
+        return `<div class="rating-summary">${starDisplay(ride.riderRating)}<span>Your rating updated ${ride.driverName}'s score.</span></div>`;
+    }
+    return `
+        <div class="rating-box">
+            <strong>Rate your driver</strong>
+            <div class="star-actions" role="group" aria-label="Rate driver">
+                ${[1, 2, 3, 4, 5].map(star => `<button type="button" title="${star} star${star > 1 ? "s" : ""}" onclick="rateRide(${ride.id}, ${star})">★</button>`).join("")}
+            </div>
+        </div>
+    `;
+}
+
+function safetyBadge(status) {
+    return `<span class="safety-badge ${status}">${workStatusLabel(status)}</span>`;
 }
 
 function show(view) {
@@ -281,7 +319,12 @@ async function loadAvailableDrivers() {
                 <span class="pill">${driver.vehicleLabel}</span>
             </div>
             <div class="driver-line"><img src="${vehicleImages[driver.vehicleType]}" alt="${driver.vehicleLabel}"><span>${driver.vehicle} | ${driver.number}</span></div>
-            <span class="subtle">${driver.seats} seats | Rating ${driver.rating} | Trips ${driver.trips}</span>
+            <div class="metric-row">
+                <span>${starDisplay(driver.rating)} ${Number(driver.rating).toFixed(1)}</span>
+                <span>${formatWorkMinutes(driver.workMinutesToday)} today</span>
+                ${safetyBadge(driver.workStatus)}
+            </div>
+            <span class="subtle">${driver.seats} seats | Trips ${driver.trips}</span>
         </article>
     `).join("") : `<p class="subtle">No ${state.vehicleType} drivers are online right now.</p>`;
 }
@@ -327,11 +370,16 @@ async function renderRiderRide() {
                 <span class="pill ${ride.status}">${ride.status}</span>
             </div>
             <span>${ride.vehicleLabel} | Rs ${ride.fare} | ${ride.distanceKm} km</span>
-            <span class="subtle">${ride.driverName === "Searching" ? "Waiting for driver to confirm your ride" : `${ride.driverName} | ${ride.vehicle} | ${ride.driverPhone}`}</span>
+            ${ride.driverName === "Searching"
+                ? `<span class="subtle">Waiting for driver to confirm your ride</span>`
+                : `<div class="driver-safety">
+                    <span><strong>${ride.driverName}</strong> | ${ride.vehicle} | ${ride.driverPhone}</span>
+                    <span>${starDisplay(ride.driverRating)} ${Number(ride.driverRating).toFixed(1)} | Worked ${formatWorkMinutes(ride.driverWorkMinutesToday)} today ${safetyBadge(ride.driverWorkStatus)}</span>
+                </div>`}
             ${ride.status === "REQUESTED" ? `<div class="waiting-card"><span class="spinner"></span><div><strong>Waiting for driver to confirm</strong><span>Nearby ${ride.vehicleLabel.toLowerCase()} drivers can see your request now.</span></div></div>` : ""}
             ${ride.status === "ACCEPTED" ? `<div class="otp-box">Start OTP: <strong>${ride.otp}</strong></div>` : ""}
             ${ride.status === "COMPLETED" && !ride.paid ? `<button class="primary" onclick="payRide(${ride.id})">Pay Rs ${ride.fare}</button>` : ""}
-            ${ride.status === "COMPLETED" && ride.paid ? `<div class="actions"><button onclick="rateRide(${ride.id}, 5)">Rate 5</button><button onclick="rateRide(${ride.id}, 4)">Rate 4</button></div>` : ""}
+            ${ride.status === "COMPLETED" && ride.paid ? ratingControl(ride) : ""}
             ${["REQUESTED", "ACCEPTED"].includes(ride.status) ? `<button onclick="cancelRide(${ride.id})">Cancel ride</button>` : ""}
         </article>
     `;
@@ -359,14 +407,29 @@ function showRideNotice(ride) {
 }
 
 async function refreshDriver() {
-    const [requests, trips] = await Promise.all([
+    const [driver, requests, trips] = await Promise.all([
+        api(`/api/drivers/${state.user.driverId}`),
         api(`/api/drivers/${state.user.driverId}/requests`),
         api(`/api/drivers/${state.user.driverId}/rides`)
     ]);
+    state.driver = driver;
     $("#driverRequestCount").textContent = requests.length;
     $("#driverTripCount").textContent = trips.length;
+    $("#driverWorkHours").textContent = formatWorkMinutes(driver.workMinutesToday);
+    $("#driverOnlineStatus").textContent = driver.onDuty ? "On duty" : "Offline";
+    renderDriverSafety(driver);
     renderDriverRequests(requests);
     await renderDriverTrips(trips);
+}
+
+function renderDriverSafety(driver) {
+    $("#driverSafetyBadge").textContent = workStatusLabel(driver.workStatus);
+    $("#driverSafetyBadge").className = `safety-badge driver-safety-badge ${driver.workStatus}`;
+    $("#driverSafetyText").textContent = `${workStatusLabel(driver.workStatus)} after ${formatWorkMinutes(driver.workMinutesToday)} on duty today.`;
+    $("#driverSafetyMeter").style.width = `${Math.min(100, Math.round((driver.workMinutesToday / driver.overtimeDailyMinutes) * 100))}%`;
+    $("#driverDutyToggle").textContent = driver.onDuty ? "Go offline and rest" : "Start duty";
+    $("#driverDutyToggle").classList.toggle("primary", !driver.onDuty);
+    $("#driverDutyToggle").classList.toggle("danger", driver.workStatus === "OVERTIME");
 }
 
 function renderDriverRequests(requests) {
@@ -453,6 +516,15 @@ async function payRide(id) {
     await refreshRider();
 }
 
+async function toggleDriverDuty() {
+    if (!state.driver) return;
+    await api(`/api/drivers/${state.user.driverId}/availability`, {
+        method: "PATCH",
+        body: JSON.stringify({ available: !state.driver.onDuty })
+    });
+    await refreshDriver();
+}
+
 async function cancelRide(id) {
     await api(`/api/rides/${id}/cancel`, { method: "PATCH", body: "{}" });
     await refreshRider();
@@ -513,6 +585,7 @@ $("#rideForm").addEventListener("submit", requestRide);
 $("#estimateBtn").addEventListener("click", loadEstimates);
 $("#refreshRiderBtn").addEventListener("click", refreshRider);
 $("#refreshDriverBtn").addEventListener("click", refreshDriver);
+$("#driverDutyToggle").addEventListener("click", toggleDriverDuty);
 $("#logoutBtn").addEventListener("click", () => window.location.reload());
 
 setupAutocomplete("#pickupAddress", "#pickupResults", "pickup");

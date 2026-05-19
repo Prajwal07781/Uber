@@ -15,9 +15,7 @@ if ($listener) {
 Write-Host "Starting UberJavaFullStack on http://localhost:$port"
 $jarPath = Join-Path $PSScriptRoot "target\uber-java-fullstack-0.0.1-SNAPSHOT.jar"
 
-if (Test-Path $jarPath) {
-    java -jar $jarPath
-} else {
+function Start-WithMaven {
     $mavenFromWrapperCache = Get-ChildItem "$env:USERPROFILE\.m2\wrapper\dists" -Recurse -Filter mvn.cmd -ErrorAction SilentlyContinue |
         Select-Object -First 1
 
@@ -26,4 +24,30 @@ if (Test-Path $jarPath) {
     } else {
         cmd /c mvnw.cmd spring-boot:run
     }
+}
+
+$bootableJar = $false
+if (Test-Path $jarPath) {
+    Add-Type -AssemblyName System.IO.Compression.FileSystem
+    $jar = [System.IO.Compression.ZipFile]::OpenRead($jarPath)
+    try {
+        $manifest = $jar.GetEntry("META-INF/MANIFEST.MF")
+        if ($manifest) {
+            $reader = New-Object System.IO.StreamReader($manifest.Open())
+            try {
+                $bootableJar = $reader.ReadToEnd().Contains("org.springframework.boot.loader")
+            } finally {
+                $reader.Dispose()
+            }
+        }
+    } finally {
+        $jar.Dispose()
+    }
+}
+
+if ($bootableJar) {
+    java -jar $jarPath
+} else {
+    Write-Host "Executable Spring Boot jar not found. Starting with Maven instead."
+    Start-WithMaven
 }

@@ -71,6 +71,7 @@ public class RideService {
         if (!driver.isAvailable()) {
             throw new IllegalStateException("Driver is not available");
         }
+        driver.startDuty();
         if (driver.getVehicleType() != ride.getVehicleType()) {
             throw new IllegalStateException("Driver vehicle type does not match this ride");
         }
@@ -109,6 +110,7 @@ public class RideService {
             ride.setCompletedAt(LocalDateTime.now());
             if (ride.getDriver() != null) {
                 DriverProfile driver = ride.getDriver();
+                driver.refreshDutyDay();
                 driver.setLatitude(ride.getDropLat());
                 driver.setLongitude(ride.getDropLng());
                 driverRepository.save(driver);
@@ -128,6 +130,7 @@ public class RideService {
         ride.setCompletedAt(LocalDateTime.now());
         if (ride.getDriver() != null) {
             DriverProfile driver = ride.getDriver();
+            driver.refreshDutyDay();
             driver.setCompletedTrips(driver.getCompletedTrips() + 1);
             driver.setLatitude(ride.getDropLat());
             driver.setLongitude(ride.getDropLng());
@@ -144,9 +147,11 @@ public class RideService {
         }
         ride.setPaid(true);
         if (ride.getDriver() != null) {
-            ride.getDriver().setAvailable(true);
-            ride.getDriver().setCompletedTrips(ride.getDriver().getCompletedTrips() + 1);
-            driverRepository.save(ride.getDriver());
+            DriverProfile driver = ride.getDriver();
+            driver.refreshDutyDay();
+            driver.setAvailable(driver.isOnDuty());
+            driver.setCompletedTrips(driver.getCompletedTrips() + 1);
+            driverRepository.save(driver);
         }
         return rideRepository.save(ride);
     }
@@ -171,11 +176,24 @@ public class RideService {
             throw new IllegalArgumentException("Rating must be between 1 and 5");
         }
         Ride ride = getRide(rideId);
+        Integer previousRating = ride.getRiderRating();
         ride.setRiderRating(rating);
         if (ride.getDriver() != null) {
-            var user = ride.getDriver().getUser();
-            user.setRating(round((user.getRating() + rating) / 2.0));
+            DriverProfile driver = ride.getDriver();
+            var user = driver.getUser();
+            int ratingCount = driver.getRatingCount();
+            if (previousRating == null) {
+                ratingCount++;
+            } else if (ratingCount == 0) {
+                ratingCount = 1;
+            }
+            double previousTotal = previousRating == null
+                    ? user.getRating() * Math.max(0, ratingCount - 1)
+                    : user.getRating() * ratingCount - previousRating;
+            driver.setRatingCount(ratingCount);
+            user.setRating(round((previousTotal + rating) / ratingCount));
             userRepository.save(user);
+            driverRepository.save(driver);
         }
         return rideRepository.save(ride);
     }
