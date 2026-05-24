@@ -5,17 +5,22 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Uber Java Full Stack</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
-    <link rel="stylesheet" href="/css/app.css?v=safety-ratings-pro-1">
+    <link rel="stylesheet" href="/css/app.css?v=uber-pro-features-1">
 </head>
 <body>
 <header class="topbar">
     <div class="brand-lockup">
-        <span class="brand-mark">U</span>
+        <span class="brand-mark">Uber</span>
         <div>
             <p class="eyebrow">Full Stack Java Uber Clone</p>
             <h1 id="pageTitle">Login</h1>
         </div>
     </div>
+    <nav class="top-nav" aria-label="Main navigation">
+        <a href="#productFeatures">Features</a>
+        <a href="#paymentFeature">Payments</a>
+        <a href="#driverHoursFeature">Driver hours</a>
+    </nav>
     <div class="top-actions">
         <span id="sessionLabel">Not signed in</span>
         <button id="logoutBtn" class="ghost hidden">Logout</button>
@@ -26,7 +31,8 @@
     <section id="authView" class="auth-layout">
         <div class="hero">
             <p class="eyebrow">Professional cab booking system</p>
-            <h2>Book safer rides with live maps, driver matching, OTP start, payment, safety hours, and star ratings.</h2>
+            <h2>Move around the city with a polished ride booking experience.</h2>
+            <p class="hero-copy">Live maps, vehicle choices, OTP start, safer driver-hour monitoring, simple payments, and ratings are built into one Java full-stack project.</p>
             <div class="role-tabs">
                 <button class="role-tab active" data-role="RIDER">User</button>
                 <button class="role-tab" data-role="DRIVER">Driver</button>
@@ -68,6 +74,107 @@
                 <p id="authMessage" class="message"></p>
             </form>
         </div>
+
+        <section id="productFeatures" class="feature-showcase">
+            <div class="section-kicker">Explore the platform</div>
+            <div class="feature-heading">
+                <h2>Explore what you can do with Uber Java</h2>
+                <p>Built like a modern cab product: useful cards, working flows, and clear trip information while you scroll.</p>
+            </div>
+            <div class="feature-grid">
+                <article class="feature-card">
+                    <div>
+                        <h3>Ride</h3>
+                        <p>Book pickup and destination, compare vehicles, then track the ride live on the map.</p>
+                    </div>
+                    <img src="/img/feature-ride.svg" alt="Cab ride illustration">
+                </article>
+                <article class="feature-card">
+                    <div>
+                        <h3>Reserve</h3>
+                        <p>Use the estimate flow to plan fare, ETA, and the best vehicle before confirming.</p>
+                    </div>
+                    <img src="/img/feature-reserve.svg" alt="Trip reserve illustration">
+                </article>
+                <article class="feature-card">
+                    <div>
+                        <h3>Intercity</h3>
+                        <p>Search city locations with autocomplete and draw a route between pickup and drop.</p>
+                    </div>
+                    <img src="/img/feature-intercity.svg" alt="Intercity cab illustration">
+                </article>
+                <article class="feature-card" id="paymentFeature">
+                    <div>
+                        <h3>Payments</h3>
+                        <p>Choose UPI, card, wallet, or cash after the trip and receive a payment reference.</p>
+                    </div>
+                    <img src="/img/feature-payment.svg" alt="Payment illustration">
+                </article>
+                <article class="feature-card" id="driverHoursFeature">
+                    <div>
+                        <h3>Driver Hours</h3>
+                        <p>Monitor safe hours, rest advice, overtime risk, and duty availability from the driver dashboard.</p>
+                    </div>
+                    <img src="/img/feature-hours.svg" alt="Driver hours illustration">
+                </article>
+                <article class="feature-card">
+                    <div>
+                        <h3>Ratings</h3>
+                        <p>Complete rides, rate drivers, and keep customer trust visible on every driver card.</p>
+                    </div>
+                    <img src="/img/feature-rating.svg" alt="Ratings illustration">
+                </article>
+            </div>
+        </section>
+
+        <section class="landing-band">
+            <div>
+                <span class="section-kicker">Project modules</span>
+                <h2>Everything is connected from login to receipt.</h2>
+            </div>
+            <div class="module-list">
+                <span>Spring Boot API</span>
+                <span>H2 database</span>
+                <span>Leaflet live maps</span>
+                <span>Driver matching</span>
+                <span>OTP ride start</span>
+                <span>Payment receipt</span>
+            </div>
+        </section>
+
+        <footer class="landing-footer">
+            <a href="#authCard">Visit Help Center</a>
+            <div class="footer-grid">
+                <div>
+                    <h3>Company</h3>
+                    <span>About us</span>
+                    <span>Our offerings</span>
+                    <span>Careers</span>
+                    <span>Blog</span>
+                </div>
+                <div>
+                    <h3>Products</h3>
+                    <span>Ride</span>
+                    <span>Drive</span>
+                    <span>Reserve</span>
+                    <span>Payments</span>
+                </div>
+                <div>
+                    <h3>Safety</h3>
+                    <span>Driver monitoring</span>
+                    <span>OTP verification</span>
+                    <span>Live tracking</span>
+                    <span>Ratings</span>
+                </div>
+                <div>
+                    <h3>Travel</h3>
+                    <span>Bengaluru</span>
+                    <span>Bhopal</span>
+                    <span>Airport trips</span>
+                    <span>Intercity</span>
+                </div>
+            </div>
+        </footer>
     </section>
 
     <section id="riderView" class="app-grid hidden">
@@ -150,6 +257,7 @@
             </div>
             <p id="driverSafetyText" class="subtle">Safe hours after 0h 00m on duty today.</p>
             <div class="safety-meter"><span id="driverSafetyMeter"></span></div>
+            <div class="duty-stats" id="driverDutyStats"></div>
             <div class="actions">
                 <button id="driverDutyToggle">Go offline and rest</button>
             </div>
@@ -182,6 +290,6 @@
 </main>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-<script src="/js/app.js?v=safety-ratings-pro-1"></script>
+<script src="/js/app.js?v=uber-pro-features-1"></script>
 </body>
 </html>

@@ -140,12 +140,16 @@ public class RideService {
     }
 
     @Transactional
-    public Ride payRide(Long rideId) {
+    public Ride payRide(Long rideId, String paymentMethod) {
         Ride ride = getRide(rideId);
         if (ride.getStatus() != RideStatus.COMPLETED) {
             throw new IllegalStateException("Ride must be completed before payment");
         }
+        String method = paymentMethod == null || paymentMethod.isBlank() ? "UPI" : paymentMethod.trim().toUpperCase();
         ride.setPaid(true);
+        ride.setPaymentMethod(method);
+        ride.setPaymentReference("PAY-" + ride.getId() + "-" + (10000 + random.nextInt(90000)));
+        ride.setPaidAt(LocalDateTime.now());
         if (ride.getDriver() != null) {
             DriverProfile driver = ride.getDriver();
             driver.refreshDutyDay();

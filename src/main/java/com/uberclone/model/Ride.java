@@ -38,11 +38,14 @@ public class Ride {
     private RideStatus status = RideStatus.REQUESTED;
 
     private boolean paid;
+    private String paymentMethod;
+    private String paymentReference;
     private Integer riderRating;
     private String startOtp;
     private int progressPercent;
     private LocalDateTime requestedAt = LocalDateTime.now();
     private LocalDateTime completedAt;
+    private LocalDateTime paidAt;
 
     public Long getId() {
         return id;
@@ -152,6 +155,22 @@ public class Ride {
         this.paid = paid;
     }
 
+    public String getPaymentMethod() {
+        return paymentMethod;
+    }
+
+    public void setPaymentMethod(String paymentMethod) {
+        this.paymentMethod = paymentMethod;
+    }
+
+    public String getPaymentReference() {
+        return paymentReference;
+    }
+
+    public void setPaymentReference(String paymentReference) {
+        this.paymentReference = paymentReference;
+    }
+
     public Integer getRiderRating() {
         return riderRating;
     }
@@ -186,5 +205,13 @@ public class Ride {
 
     public void setCompletedAt(LocalDateTime completedAt) {
         this.completedAt = completedAt;
+    }
+
+    public LocalDateTime getPaidAt() {
+        return paidAt;
+    }
+
+    public void setPaidAt(LocalDateTime paidAt) {
+        this.paidAt = paidAt;
     }
 }

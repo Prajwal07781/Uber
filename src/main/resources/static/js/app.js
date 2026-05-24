@@ -4,10 +4,18 @@ const state = {
     user: null,
     driver: null,
     vehicleType: "CAB",
+    paymentMethod: "UPI",
     latestRide: null,
     pickup: { name: "MG Road, Bengaluru", lat: 12.9758, lng: 77.6050 },
     drop: { name: "Indiranagar, Bengaluru", lat: 12.9719, lng: 77.6412 }
 };
+
+const paymentMethods = [
+    { id: "UPI", label: "UPI", detail: "Instant app payment" },
+    { id: "CARD", label: "Card", detail: "Debit or credit card" },
+    { id: "WALLET", label: "Wallet", detail: "Project wallet balance" },
+    { id: "CASH", label: "Cash", detail: "Pay driver directly" }
+];
 
 const vehicleImages = {
     BIKE: "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 96 64'%3E%3Crect width='96' height='64' rx='12' fill='%23f5fbf8'/%3E%3Ccircle cx='24' cy='44' r='10' fill='%23151819'/%3E%3Ccircle cx='72' cy='44' r='10' fill='%23151819'/%3E%3Cpath d='M28 42h18l10-18h10l8 18M45 42l-8-15h-9' fill='none' stroke='%23097a53' stroke-width='6' stroke-linecap='round'/%3E%3C/svg%3E",
@@ -55,7 +63,7 @@ function workStatusLabel(status) {
 
 function starDisplay(rating = 0) {
     const rounded = Math.round(Number(rating) || 0);
-    return `<span class="stars" aria-label="${rating} out of 5">${[1, 2, 3, 4, 5].map(star => star <= rounded ? "★" : "☆").join("")}</span>`;
+    return `<span class="stars" aria-label="${rating} out of 5">${[1, 2, 3, 4, 5].map(star => star <= rounded ? "&#9733;" : "&#9734;").join("")}</span>`;
 }
 
 function ratingControl(ride) {
@@ -66,10 +74,49 @@ function ratingControl(ride) {
         <div class="rating-box">
             <strong>Rate your driver</strong>
             <div class="star-actions" role="group" aria-label="Rate driver">
-                ${[1, 2, 3, 4, 5].map(star => `<button type="button" title="${star} star${star > 1 ? "s" : ""}" onclick="rateRide(${ride.id}, ${star})">★</button>`).join("")}
+                ${[1, 2, 3, 4, 5].map(star => `<button type="button" title="${star} star${star > 1 ? "s" : ""}" onclick="rateRide(${ride.id}, ${star})">&#9733;</button>`).join("")}
             </div>
         </div>
     `;
+}
+
+function paymentPanel(ride) {
+    return `
+        <div class="payment-box">
+            <div class="payment-head">
+                <div>
+                    <strong>Complete payment</strong>
+                    <span>Fare total Rs ${ride.fare} for ${ride.vehicleLabel}</span>
+                </div>
+                <span class="payment-total">Rs ${ride.fare}</span>
+            </div>
+            <div class="payment-methods" role="group" aria-label="Choose payment method">
+                ${paymentMethods.map(method => `
+                    <button type="button" class="payment-option ${state.paymentMethod === method.id ? "active" : ""}" onclick="selectPaymentMethod('${method.id}')">
+                        <strong>${method.label}</strong>
+                        <span>${method.detail}</span>
+                    </button>
+                `).join("")}
+            </div>
+            <button class="primary" onclick="payRide(${ride.id})">Pay with ${state.paymentMethod}</button>
+        </div>
+    `;
+}
+
+function paymentReceipt(ride) {
+    return `
+        <div class="receipt-box">
+            <div>
+                <strong>Payment completed</strong>
+                <span>${ride.paymentMethod || "UPI"} | ${ride.paymentReference || "Receipt generated"}</span>
+            </div>
+            <span>${ride.paidAt || "Paid"}</span>
+        </div>
+    `;
+}
+
+function dutyMetric(label, value) {
+    return `<div><strong>${value}</strong><span>${label}</span></div>`;
 }
 
 function safetyBadge(status) {
@@ -378,7 +425,8 @@ async function renderRiderRide() {
                 </div>`}
             ${ride.status === "REQUESTED" ? `<div class="waiting-card"><span class="spinner"></span><div><strong>Waiting for driver to confirm</strong><span>Nearby ${ride.vehicleLabel.toLowerCase()} drivers can see your request now.</span></div></div>` : ""}
             ${ride.status === "ACCEPTED" ? `<div class="otp-box">Start OTP: <strong>${ride.otp}</strong></div>` : ""}
-            ${ride.status === "COMPLETED" && !ride.paid ? `<button class="primary" onclick="payRide(${ride.id})">Pay Rs ${ride.fare}</button>` : ""}
+            ${ride.status === "COMPLETED" && !ride.paid ? paymentPanel(ride) : ""}
+            ${ride.status === "COMPLETED" && ride.paid ? paymentReceipt(ride) : ""}
             ${ride.status === "COMPLETED" && ride.paid ? ratingControl(ride) : ""}
             ${["REQUESTED", "ACCEPTED"].includes(ride.status) ? `<button onclick="cancelRide(${ride.id})">Cancel ride</button>` : ""}
         </article>
@@ -423,10 +471,25 @@ async function refreshDriver() {
 }
 
 function renderDriverSafety(driver) {
+    const minutes = Number(driver.workMinutesToday) || 0;
+    const safeLimit = Number(driver.safeDailyMinutes) || 480;
+    const overtimeLimit = Number(driver.overtimeDailyMinutes) || 600;
+    const remainingSafe = Math.max(0, safeLimit - minutes);
+    const remainingOvertime = Math.max(0, overtimeLimit - minutes);
     $("#driverSafetyBadge").textContent = workStatusLabel(driver.workStatus);
     $("#driverSafetyBadge").className = `safety-badge driver-safety-badge ${driver.workStatus}`;
-    $("#driverSafetyText").textContent = `${workStatusLabel(driver.workStatus)} after ${formatWorkMinutes(driver.workMinutesToday)} on duty today.`;
-    $("#driverSafetyMeter").style.width = `${Math.min(100, Math.round((driver.workMinutesToday / driver.overtimeDailyMinutes) * 100))}%`;
+    $("#driverSafetyText").textContent = driver.workStatus === "SAFE"
+        ? `${formatWorkMinutes(remainingSafe)} safe driving time left before rest is advised.`
+        : driver.workStatus === "NEEDS_REST"
+            ? `Rest is advised now. ${formatWorkMinutes(remainingOvertime)} left before overtime risk.`
+            : "Overtime risk reached. Go offline and rest before accepting more trips.";
+    $("#driverSafetyMeter").style.width = `${Math.min(100, Math.round((minutes / overtimeLimit) * 100))}%`;
+    $("#driverDutyStats").innerHTML = [
+        dutyMetric("Worked today", formatWorkMinutes(minutes)),
+        dutyMetric("Safe limit", formatWorkMinutes(safeLimit)),
+        dutyMetric("Overtime limit", formatWorkMinutes(overtimeLimit)),
+        dutyMetric("Trips completed", driver.trips)
+    ].join("");
     $("#driverDutyToggle").textContent = driver.onDuty ? "Go offline and rest" : "Start duty";
     $("#driverDutyToggle").classList.toggle("primary", !driver.onDuty);
     $("#driverDutyToggle").classList.toggle("danger", driver.workStatus === "OVERTIME");
@@ -478,10 +541,10 @@ function driverButtons(ride) {
         return `<button class="primary" onclick="progressRide(${ride.id})">Update Live Tracking</button>`;
     }
     if (ride.status === "COMPLETED" && !ride.paid) {
-        return `<span class="subtle">Waiting for user payment</span>`;
+        return `<span class="subtle">Waiting for user payment of Rs ${ride.fare}</span>`;
     }
     if (ride.status === "COMPLETED" && ride.paid) {
-        return `<span class="subtle">Paid and completed</span>`;
+        return `<span class="subtle">Paid by ${ride.paymentMethod || "UPI"} | ${ride.paymentReference || "Receipt generated"}</span>`;
     }
     return "";
 }
@@ -512,8 +575,16 @@ async function progressRide(id) {
 }
 
 async function payRide(id) {
-    await api(`/api/rides/${id}/pay`, { method: "PATCH", body: "{}" });
+    await api(`/api/rides/${id}/pay`, {
+        method: "PATCH",
+        body: JSON.stringify({ method: state.paymentMethod })
+    });
     await refreshRider();
+}
+
+async function selectPaymentMethod(method) {
+    state.paymentMethod = method;
+    await renderRiderRide();
 }
 
 async function toggleDriverDuty() {

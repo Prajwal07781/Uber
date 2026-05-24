@@ -90,8 +90,9 @@ public class RideApiController {
     }
 
     @PatchMapping("/rides/{id}/pay")
-    public RideResponse pay(@PathVariable Long id) {
-        return RideResponse.from(rideService.payRide(id));
+    public RideResponse pay(@PathVariable Long id, @RequestBody(required = false) Map<String, String> body) {
+        String method = body == null ? "UPI" : body.getOrDefault("method", "UPI");
+        return RideResponse.from(rideService.payRide(id, method));
     }
 
     @PatchMapping("/rides/{id}/cancel")
