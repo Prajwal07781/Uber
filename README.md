@@ -1,6 +1,6 @@
 # Uber Java Full Stack
 
-A full-stack Java Uber-style ride booking application built with Spring Boot, Thymeleaf, Spring Data JPA, and H2.
+A full-stack Java Uber-style ride booking application built with Spring Boot, React, Spring Data JPA, and H2.
 
 ## Features
 
@@ -31,7 +31,7 @@ A full-stack Java Uber-style ride booking application built with Spring Boot, Th
 - Java 17 compatible source, tested with Java 20
 - Spring Boot 3.5
 - Spring MVC and REST APIs
-- Thymeleaf frontend
+- React frontend served by Spring Boot static resources
 - Spring Data JPA
 - H2 database
 - Maven Wrapper
@@ -132,6 +132,5 @@ src/main/java/com/uberclone
   service      Ride matching, fare, and lifecycle logic
 
 src/main/resources
-  templates    Thymeleaf UI
-  static       CSS and JavaScript
+  static       React app shell, CSS, JavaScript, and images
 ```

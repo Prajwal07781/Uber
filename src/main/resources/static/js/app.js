@@ -1,20 +1,23 @@
-const state = {
-    authMode: "login",
-    role: "RIDER",
-    user: null,
-    driver: null,
-    vehicleType: "CAB",
-    paymentMethod: "UPI",
-    latestRide: null,
-    pickup: { name: "MG Road, Bengaluru", lat: 12.9758, lng: 77.6050 },
-    drop: { name: "Indiranagar, Bengaluru", lat: 12.9719, lng: 77.6412 }
-};
+const h = React.createElement;
+const { useEffect, useMemo, useRef, useState } = React;
+
+const defaultPickup = { name: "MG Road, Bengaluru", lat: 12.9758, lng: 77.6050 };
+const defaultDrop = { name: "Indiranagar, Bengaluru", lat: 12.9719, lng: 77.6412 };
 
 const paymentMethods = [
-    { id: "UPI", label: "UPI", detail: "Instant app payment" },
-    { id: "CARD", label: "Card", detail: "Debit or credit card" },
-    { id: "WALLET", label: "Wallet", detail: "Project wallet balance" },
-    { id: "CASH", label: "Cash", detail: "Pay driver directly" }
+    { id: "UPI", label: "UPI", detail: "Instant transfer" },
+    { id: "CARD", label: "Card", detail: "Debit or credit" },
+    { id: "WALLET", label: "Wallet", detail: "App balance" },
+    { id: "CASH", label: "Cash", detail: "Pay driver" }
+];
+
+const featureCards = [
+    { title: "Ride", text: "Book pickup and drop locations, compare fares, and track the assigned driver.", image: "/img/feature-ride.svg" },
+    { title: "Reserve", text: "Estimate fare, distance, and ETA before the ride request goes live.", image: "/img/feature-reserve.svg" },
+    { title: "Intercity", text: "Search Indian locations and draw live pickup-to-destination routes.", image: "/img/feature-intercity.svg" },
+    { title: "Payments", text: "Close the trip with UPI, card, wallet, or cash and generate a receipt.", image: "/img/feature-payment.svg" },
+    { title: "Driver Hours", text: "Track duty time, safe limits, rest advice, and overtime risk.", image: "/img/feature-hours.svg" },
+    { title: "Ratings", text: "Capture rider feedback and keep trust visible across driver cards.", image: "/img/feature-rating.svg" }
 ];
 
 const vehicleImages = {
@@ -24,12 +27,9 @@ const vehicleImages = {
     SUV: "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 96 64'%3E%3Crect width='96' height='64' rx='12' fill='%23f4f0ff'/%3E%3Cpath d='M14 39h68l-9-20H31L14 39z' fill='%236b4fd8'/%3E%3Crect x='17' y='35' width='67' height='16' rx='4' fill='%236b4fd8'/%3E%3Cpath d='M35 24h34l5 11H27l8-11z' fill='%23ffffff' opacity='.82'/%3E%3Ccircle cx='30' cy='51' r='8' fill='%23151819'/%3E%3Ccircle cx='70' cy='51' r='8' fill='%23151819'/%3E%3C/svg%3E"
 };
 
-const maps = {
-    rider: {},
-    driver: {}
-};
-
-const $ = selector => document.querySelector(selector);
+function cx(...parts) {
+    return parts.filter(Boolean).join(" ");
+}
 
 async function api(path, options = {}) {
     const response = await fetch(path, {
@@ -38,13 +38,22 @@ async function api(path, options = {}) {
     });
     if (!response.ok) {
         const error = await response.json().catch(() => ({ message: "Request failed" }));
-        throw new Error(error.message);
+        throw new Error(error.message || "Request failed");
     }
     return response.json();
 }
 
-function setMessage(selector, message) {
-    $(selector).textContent = message;
+async function searchPlaces(query) {
+    if (query.trim().length < 3) return [];
+    const params = new URLSearchParams({
+        q: query,
+        format: "jsonv2",
+        addressdetails: "1",
+        limit: "6",
+        countrycodes: "in"
+    });
+    const response = await fetch(`https://nominatim.openstreetmap.org/search?${params}`);
+    return response.json();
 }
 
 function formatWorkMinutes(minutes = 0) {
@@ -61,131 +70,339 @@ function workStatusLabel(status) {
     }[status] || status;
 }
 
-function starDisplay(rating = 0) {
+function shortName(value = "") {
+    return value.split(",").slice(0, 2).join(",").trim();
+}
+
+function ridePoint(ride, type) {
+    return type === "pickup"
+        ? { name: ride.pickupAddress, lat: ride.pickupLat, lng: ride.pickupLng }
+        : { name: ride.dropAddress, lat: ride.dropLat, lng: ride.dropLng };
+}
+
+function mapText(ride) {
+    if (!ride) return "Pickup to destination";
+    if (ride.status === "REQUESTED") return "Waiting for driver to confirm";
+    if (ride.status === "ACCEPTED") return "Driver accepted | share OTP";
+    if (ride.status === "IN_PROGRESS") return `Travelling | ${ride.progressPercent}%`;
+    if (ride.status === "COMPLETED" && !ride.paid) return "Arrived | payment pending";
+    if (ride.status === "COMPLETED") return "Trip completed";
+    return ride.status;
+}
+
+function Field({ label, children, className }) {
+    return h("label", { className }, h("span", null, label), children);
+}
+
+function SectionTitle({ title, meta, action }) {
+    return h("div", { className: "section-title" },
+        h("div", null, h("h2", null, title), meta ? h("span", null, meta) : null),
+        action || null
+    );
+}
+
+function Stars({ rating = 0 }) {
     const rounded = Math.round(Number(rating) || 0);
-    return `<span class="stars" aria-label="${rating} out of 5">${[1, 2, 3, 4, 5].map(star => star <= rounded ? "&#9733;" : "&#9734;").join("")}</span>`;
+    return h("span", { className: "stars", "aria-label": `${rating} out of 5` },
+        [1, 2, 3, 4, 5].map(star => star <= rounded ? "★" : "☆").join("")
+    );
 }
 
-function ratingControl(ride) {
-    if (ride.riderRating) {
-        return `<div class="rating-summary">${starDisplay(ride.riderRating)}<span>Your rating updated ${ride.driverName}'s score.</span></div>`;
+function SafetyBadge({ status = "UNKNOWN" }) {
+    return h("span", { className: cx("safety-badge", status) }, workStatusLabel(status));
+}
+
+function Topbar({ user, view, onLogout }) {
+    return h("header", { className: "topbar" },
+        h("a", { className: "brand-lockup", href: "#" },
+            h("span", { className: "brand-mark" }, "Uber"),
+            h("span", { className: "brand-copy" },
+                h("span", null, "Java full stack"),
+                h("strong", null, user ? `${user.role === "RIDER" ? "Rider" : "Driver"} dashboard` : "React experience")
+            )
+        ),
+        !user ? h("nav", { className: "top-nav", "aria-label": "Main navigation" },
+            h("a", { href: "#product" }, "Product"),
+            h("a", { href: "#payments" }, "Payments"),
+            h("a", { href: "#safety" }, "Safety")
+        ) : null,
+        h("div", { className: "top-actions" },
+            h("span", null, user ? `${user.name} | ${user.role}` : view === "auth" ? "Not signed in" : ""),
+            user ? h("button", { className: "ghost", onClick: onLogout }, "Logout") : null
+        )
+    );
+}
+
+function AuthView({ role, setRole, authMode, setAuthMode, onSubmit, message }) {
+    const [form, setForm] = useState({
+        name: "",
+        phone: "9000000001",
+        password: "password",
+        vehicleName: "",
+        vehicleNumber: "",
+        vehicleType: "CAB"
+    });
+
+    useEffect(() => {
+        setForm(current => ({ ...current, phone: role === "RIDER" ? "9000000001" : "9000000101" }));
+    }, [role]);
+
+    function update(field, value) {
+        setForm(current => ({ ...current, [field]: value }));
     }
-    return `
-        <div class="rating-box">
-            <strong>Rate your driver</strong>
-            <div class="star-actions" role="group" aria-label="Rate driver">
-                ${[1, 2, 3, 4, 5].map(star => `<button type="button" title="${star} star${star > 1 ? "s" : ""}" onclick="rateRide(${ride.id}, ${star})">&#9733;</button>`).join("")}
-            </div>
-        </div>
-    `;
+
+    function submit(event) {
+        event.preventDefault();
+        onSubmit(form);
+    }
+
+    return h("section", { className: "auth-layout" },
+        h("div", { className: "hero" },
+            h("div", { className: "hero-content" },
+                h("p", { className: "eyebrow" }, "React powered cab platform"),
+                h("h1", null, "A sharper Uber clone for booking, driving, and dispatch."),
+                h("p", { className: "hero-copy" },
+                    "Live maps, fare estimates, vehicle matching, OTP starts, driver hour safety, payments, and ratings are now composed as a modern React frontend."
+                ),
+                h("div", { className: "role-tabs" },
+                    ["RIDER", "DRIVER"].map(item => h("button", {
+                        key: item,
+                        className: cx("role-tab", role === item && "active"),
+                        onClick: () => setRole(item),
+                        type: "button"
+                    }, item === "RIDER" ? "User" : "Driver"))
+                )
+            )
+        ),
+        h("aside", { className: "panel auth-card" },
+            SectionTitle({
+                title: `${role === "RIDER" ? "User" : "Driver"} ${authMode === "login" ? "Login" : "Signup"}`,
+                meta: authMode === "login" ? "Use seeded demo accounts" : "Create a profile",
+                action: h("button", { type: "button", onClick: () => setAuthMode(authMode === "login" ? "signup" : "login") },
+                    authMode === "login" ? "Create account" : "Back to login")
+            }),
+            h("form", { onSubmit: submit },
+                authMode === "signup" ? Field({
+                    label: "Full name",
+                    children: h("input", {
+                        value: form.name,
+                        onChange: event => update("name", event.target.value),
+                        placeholder: "Enter name",
+                        required: true
+                    })
+                }) : null,
+                Field({
+                    label: "Phone",
+                    children: h("input", {
+                        value: form.phone,
+                        onChange: event => update("phone", event.target.value),
+                        placeholder: "Phone number",
+                        required: true
+                    })
+                }),
+                Field({
+                    label: "Password",
+                    children: h("input", {
+                        type: "password",
+                        value: form.password,
+                        onChange: event => update("password", event.target.value),
+                        required: true
+                    })
+                }),
+                authMode === "signup" && role === "DRIVER" ? h("div", { className: "grid two" },
+                    Field({
+                        label: "Vehicle name",
+                        children: h("input", {
+                            value: form.vehicleName,
+                            onChange: event => update("vehicleName", event.target.value),
+                            placeholder: "Honda City"
+                        })
+                    }),
+                    Field({
+                        label: "Vehicle number",
+                        children: h("input", {
+                            value: form.vehicleNumber,
+                            onChange: event => update("vehicleNumber", event.target.value),
+                            placeholder: "KA 05 AB 1234"
+                        })
+                    }),
+                    Field({
+                        label: "Vehicle type",
+                        className: "wide",
+                        children: h("select", {
+                            value: form.vehicleType,
+                            onChange: event => update("vehicleType", event.target.value)
+                        },
+                            h("option", { value: "BIKE" }, "Bike"),
+                            h("option", { value: "AUTO" }, "Auto"),
+                            h("option", { value: "CAB" }, "Cab (5 seater)"),
+                            h("option", { value: "SUV" }, "SUV (7 seater)")
+                        )
+                    })
+                ) : null,
+                h("button", { className: "primary", type: "submit" }, authMode === "login" ? "Login" : "Create account"),
+                h("p", { className: "message", role: "status" }, message)
+            )
+        ),
+        h("section", { className: "feature-showcase", id: "product" },
+            h("div", { className: "feature-heading" },
+                h("div", null,
+                    h("span", { className: "section-kicker" }, "Platform modules"),
+                    h("h2", null, "Built like a real mobility product.")
+                ),
+                h("p", null, "The interface keeps operational dashboards dense and clear while the booking flow still feels premium.")
+            ),
+            h("div", { className: "feature-grid" },
+                featureCards.map((feature, index) => h("article", {
+                    key: feature.title,
+                    className: "feature-card",
+                    id: index === 3 ? "payments" : index === 4 ? "safety" : undefined
+                },
+                    h("div", null, h("h3", null, feature.title), h("p", null, feature.text)),
+                    h("img", { src: feature.image, alt: `${feature.title} illustration` })
+                ))
+            )
+        ),
+        h("section", { className: "landing-band" },
+            h("div", null,
+                h("span", { className: "section-kicker" }, "Stack"),
+                h("h2", null, "React frontend. Spring Boot API. H2 persistence.")
+            ),
+            h("div", { className: "module-list" },
+                ["React UI", "Spring Boot", "Leaflet maps", "Driver matching", "OTP rides", "Payment receipt"].map(item => h("span", { key: item }, item))
+            )
+        )
+    );
 }
 
-function paymentPanel(ride) {
-    return `
-        <div class="payment-box">
-            <div class="payment-head">
-                <div>
-                    <strong>Complete payment</strong>
-                    <span>Fare total Rs ${ride.fare} for ${ride.vehicleLabel}</span>
-                </div>
-                <span class="payment-total">Rs ${ride.fare}</span>
-            </div>
-            <div class="payment-methods" role="group" aria-label="Choose payment method">
-                ${paymentMethods.map(method => `
-                    <button type="button" class="payment-option ${state.paymentMethod === method.id ? "active" : ""}" onclick="selectPaymentMethod('${method.id}')">
-                        <strong>${method.label}</strong>
-                        <span>${method.detail}</span>
-                    </button>
-                `).join("")}
-            </div>
-            <button class="primary" onclick="payRide(${ride.id})">Pay with ${state.paymentMethod}</button>
-        </div>
-    `;
-}
+function PlaceInput({ label, value, onInput, onSelect }) {
+    const [results, setResults] = useState([]);
+    const [loading, setLoading] = useState(false);
+    const userEdited = useRef(false);
 
-function paymentReceipt(ride) {
-    return `
-        <div class="receipt-box">
-            <div>
-                <strong>Payment completed</strong>
-                <span>${ride.paymentMethod || "UPI"} | ${ride.paymentReference || "Receipt generated"}</span>
-            </div>
-            <span>${ride.paidAt || "Paid"}</span>
-        </div>
-    `;
-}
-
-function dutyMetric(label, value) {
-    return `<div><strong>${value}</strong><span>${label}</span></div>`;
-}
-
-function safetyBadge(status) {
-    return `<span class="safety-badge ${status}">${workStatusLabel(status)}</span>`;
-}
-
-function show(view) {
-    ["#authView", "#riderView", "#driverView"].forEach(id => $(id).classList.add("hidden"));
-    $(view).classList.remove("hidden");
-    setTimeout(() => {
-        Object.values(maps).forEach(mapState => mapState.map?.invalidateSize());
-    }, 100);
-}
-
-function configureAuth() {
-    $("#authTitle").textContent = `${state.role === "RIDER" ? "User" : "Driver"} ${state.authMode === "login" ? "Login" : "Signup"}`;
-    $("#authSubmit").textContent = state.authMode === "login" ? "Login" : "Create account";
-    $("#switchAuthBtn").textContent = state.authMode === "login" ? "Create account" : "Back to login";
-    document.querySelectorAll(".signup-only").forEach(item => item.classList.toggle("hidden", state.authMode === "login"));
-    $("#driverSignupFields").classList.toggle("hidden", state.authMode === "login" || state.role !== "DRIVER");
-    $("#phone").value = state.role === "RIDER" ? "9000000001" : "9000000101";
-}
-
-async function submitAuth(event) {
-    event.preventDefault();
-    try {
-        const payload = {
-            name: $("#name").value,
-            phone: $("#phone").value,
-            password: $("#password").value,
-            role: state.role,
-            vehicleName: $("#vehicleName").value,
-            vehicleNumber: $("#vehicleNumber").value,
-            vehicleType: $("#signupVehicleType").value
+    useEffect(() => {
+        let cancelled = false;
+        const timer = setTimeout(async () => {
+            if (!userEdited.current) return;
+            if (value.trim().length < 3) {
+                setResults([]);
+                return;
+            }
+            setLoading(true);
+            try {
+                const places = await searchPlaces(value);
+                if (!cancelled) setResults(places);
+            } catch (error) {
+                if (!cancelled) setResults([]);
+            } finally {
+                if (!cancelled) setLoading(false);
+            }
+        }, 350);
+        return () => {
+            cancelled = true;
+            clearTimeout(timer);
         };
-        state.user = await api(`/api/auth/${state.authMode === "login" ? "login" : "signup"}`, {
-            method: "POST",
-            body: JSON.stringify(payload)
-        });
-        $("#logoutBtn").classList.remove("hidden");
-        $("#sessionLabel").textContent = `${state.user.name} | ${state.user.role}`;
-        $("#pageTitle").textContent = state.user.role === "RIDER" ? "User Dashboard" : "Driver Dashboard";
-        if (state.user.role === "RIDER") {
-            show("#riderView");
-            initMap("rider", "riderMap");
-            await drawRoute("rider", state.pickup, state.drop, 0);
-            await loadEstimates();
-            await refreshRider();
-        } else {
-            show("#driverView");
-            initMap("driver", "driverMap");
-            await refreshDriver();
-        }
-    } catch (error) {
-        setMessage("#authMessage", error.message);
-    }
+    }, [value]);
+
+    return Field({
+        label,
+        className: "place-field",
+        children: h(React.Fragment, null,
+            h("input", {
+                value,
+                onChange: event => {
+                    userEdited.current = true;
+                    onInput(event.target.value);
+                },
+                autoComplete: "off",
+                required: true
+            }),
+            results.length || loading ? h("div", { className: "suggestions" },
+                loading ? h("span", { className: "suggestion-loading" }, "Searching locations...") : null,
+                results.map(place => h("button", {
+                    key: `${place.place_id}-${place.lat}`,
+                    type: "button",
+                    className: "suggestion-item",
+                    onClick: () => {
+                        userEdited.current = false;
+                        setResults([]);
+                        onSelect({
+                            name: place.display_name,
+                            lat: Number(place.lat),
+                            lng: Number(place.lon)
+                        });
+                    }
+                }, place.display_name))
+            ) : null
+        )
+    });
 }
 
-function initMap(kind, elementId) {
-    if (maps[kind].map) {
-        maps[kind].map.invalidateSize();
-        return;
-    }
-    const map = L.map(elementId, { zoomControl: true }).setView([12.9716, 77.5946], 13);
-    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-        maxZoom: 19,
-        attribution: "&copy; OpenStreetMap contributors"
-    }).addTo(map);
-    maps[kind].map = map;
+function MapPanel({ title, meta, pickup, drop, progress = 0, className = "" }) {
+    const elementRef = useRef(null);
+    const mapState = useRef({});
+
+    useEffect(() => {
+        if (!elementRef.current || mapState.current.map || !window.L) return;
+        const map = L.map(elementRef.current, { zoomControl: true }).setView([12.9716, 77.5946], 13);
+        L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+            maxZoom: 19,
+            attribution: "&copy; OpenStreetMap contributors"
+        }).addTo(map);
+        mapState.current.map = map;
+        setTimeout(() => map.invalidateSize(), 100);
+    }, []);
+
+    useEffect(() => {
+        const state = mapState.current;
+        if (!state.map || !pickup || !drop) return;
+        let cancelled = false;
+
+        async function draw() {
+            const map = state.map;
+            const pickupLatLng = [pickup.lat, pickup.lng];
+            const dropLatLng = [drop.lat, drop.lng];
+            state.pickupMarker?.remove();
+            state.dropMarker?.remove();
+            state.routeLine?.remove();
+
+            state.pickupMarker = L.marker(pickupLatLng, { icon: markerIcon("P", "pickup-icon") }).addTo(map);
+            state.dropMarker = L.marker(dropLatLng, { icon: markerIcon("D", "drop-icon") }).addTo(map);
+
+            let routePoints = [pickupLatLng, dropLatLng];
+            try {
+                const osrmUrl = `https://router.project-osrm.org/route/v1/driving/${pickup.lng},${pickup.lat};${drop.lng},${drop.lat}?overview=full&geometries=geojson`;
+                const response = await fetch(osrmUrl);
+                const data = await response.json();
+                if (!cancelled && data.routes?.[0]?.geometry?.coordinates?.length) {
+                    routePoints = data.routes[0].geometry.coordinates.map(([lng, lat]) => [lat, lng]);
+                }
+            } catch (error) {
+                console.warn("Route service unavailable, using straight line", error);
+            }
+
+            if (cancelled) return;
+            state.routePoints = routePoints;
+            state.routeLine = L.polyline(routePoints, { color: "#111111", weight: 5, opacity: 0.82 }).addTo(map);
+            map.fitBounds(L.latLngBounds(routePoints), { padding: [32, 32] });
+            moveCar(state, progress);
+        }
+
+        draw();
+        return () => {
+            cancelled = true;
+        };
+    }, [pickup?.lat, pickup?.lng, drop?.lat, drop?.lng]);
+
+    useEffect(() => {
+        moveCar(mapState.current, progress);
+    }, [progress]);
+
+    return h("div", { className: cx("panel map-panel", className) },
+        SectionTitle({ title, meta }),
+        h("div", { className: "map live-map", ref: elementRef }),
+        h("div", { className: "progress" }, h("span", { style: { width: `${Math.max(0, Math.min(100, progress))}%` } }))
+    );
 }
 
 function markerIcon(label, className) {
@@ -206,465 +423,590 @@ function carIcon() {
     });
 }
 
-async function drawRoute(kind, pickup, drop, progress) {
-    initMap(kind, `${kind}Map`);
-    const mapState = maps[kind];
-    const map = mapState.map;
-    const pickupLatLng = [pickup.lat, pickup.lng];
-    const dropLatLng = [drop.lat, drop.lng];
-
-    mapState.pickupMarker?.remove();
-    mapState.dropMarker?.remove();
-    mapState.routeLine?.remove();
-    mapState.pickupMarker = L.marker(pickupLatLng, { icon: markerIcon("P", "pickup-icon") }).addTo(map);
-    mapState.dropMarker = L.marker(dropLatLng, { icon: markerIcon("D", "drop-icon") }).addTo(map);
-
-    let routePoints = [pickupLatLng, dropLatLng];
-    try {
-        const osrmUrl = `https://router.project-osrm.org/route/v1/driving/${pickup.lng},${pickup.lat};${drop.lng},${drop.lat}?overview=full&geometries=geojson`;
-        const response = await fetch(osrmUrl);
-        const data = await response.json();
-        if (data.routes?.[0]?.geometry?.coordinates?.length) {
-            routePoints = data.routes[0].geometry.coordinates.map(([lng, lat]) => [lat, lng]);
-        }
-    } catch (error) {
-        console.warn("Route service unavailable, using straight line", error);
-    }
-
-    mapState.routePoints = routePoints;
-    mapState.routeLine = L.polyline(routePoints, { color: "#1768cf", weight: 5, opacity: 0.82 }).addTo(map);
-    map.fitBounds(L.latLngBounds(routePoints), { padding: [32, 32] });
-    moveCar(kind, progress);
-}
-
-function moveCar(kind, progress) {
-    const mapState = maps[kind];
-    if (!mapState.map || !mapState.routePoints?.length) return;
-    const points = mapState.routePoints;
+function moveCar(state, progress) {
+    if (!state.map || !state.routePoints?.length) return;
+    const points = state.routePoints;
     const index = Math.min(points.length - 1, Math.max(0, Math.round((progress / 100) * (points.length - 1))));
-    if (!mapState.carMarker) {
-        mapState.carMarker = L.marker(points[index], { icon: carIcon() }).addTo(mapState.map);
+    if (!state.carMarker) {
+        state.carMarker = L.marker(points[index], { icon: carIcon() }).addTo(state.map);
     } else {
-        mapState.carMarker.setLatLng(points[index]);
+        state.carMarker.setLatLng(points[index]);
     }
 }
 
-async function searchPlaces(query) {
-    if (query.trim().length < 3) return [];
-    const params = new URLSearchParams({
-        q: query,
-        format: "jsonv2",
-        addressdetails: "1",
-        limit: "6",
-        countrycodes: "in"
-    });
-    const response = await fetch(`https://nominatim.openstreetmap.org/search?${params}`);
-    return response.json();
+function VehicleOptions({ estimates, vehicleType, onSelect }) {
+    return h("div", { className: "vehicle-row" },
+        estimates.map(estimate => h("button", {
+            key: estimate.vehicleType,
+            type: "button",
+            className: cx("vehicle-card", estimate.vehicleType === vehicleType && "active"),
+            onClick: () => onSelect(estimate.vehicleType)
+        },
+            h("img", { src: vehicleImages[estimate.vehicleType], alt: estimate.label }),
+            h("span", { className: "vehicle-copy" },
+                h("strong", null, estimate.label),
+                h("small", null, `${estimate.seats} seat${estimate.seats > 1 ? "s" : ""} | ${estimate.distanceKm} km | ${estimate.etaMinutes} min`),
+                h("b", null, `Rs ${estimate.fare}`)
+            )
+        ))
+    );
 }
 
-function setupAutocomplete(inputId, resultsId, pointName) {
-    const input = $(inputId);
-    const results = $(resultsId);
-    let timer;
-    input.addEventListener("input", () => {
-        clearTimeout(timer);
-        timer = setTimeout(async () => {
-            const places = await searchPlaces(input.value);
-            results.innerHTML = places.map(place => `
-                <button type="button" class="suggestion-item" data-lat="${place.lat}" data-lng="${place.lon}">
-                    ${place.display_name}
-                </button>
-            `).join("");
-            results.querySelectorAll(".suggestion-item").forEach(button => {
-                button.addEventListener("click", async () => {
-                    state[pointName] = {
-                        name: button.textContent.trim(),
-                        lat: Number(button.dataset.lat),
-                        lng: Number(button.dataset.lng)
-                    };
-                    input.value = state[pointName].name;
-                    results.innerHTML = "";
-                    await drawRoute("rider", state.pickup, state.drop, 0);
-                    await loadEstimates();
-                });
-            });
-        }, 350);
-    });
+function DashboardStrip({ items }) {
+    return h("div", { className: "dashboard-strip" },
+        items.map(item => h("div", { key: item.label },
+            h("strong", null, item.value),
+            h("span", null, item.label)
+        ))
+    );
 }
 
-async function ensurePlace(pointName, inputId) {
-    const typed = $(inputId).value.trim();
-    if (typed === state[pointName].name) return state[pointName];
-    const places = await searchPlaces(typed);
-    if (!places.length) {
-        throw new Error(`Select a valid ${pointName === "pickup" ? "pickup" : "destination"} place`);
-    }
-    state[pointName] = {
-        name: places[0].display_name,
-        lat: Number(places[0].lat),
-        lng: Number(places[0].lon)
-    };
-    $(inputId).value = state[pointName].name;
-    return state[pointName];
-}
-
-async function syncPlacesFromInputs() {
-    await ensurePlace("pickup", "#pickupAddress");
-    await ensurePlace("drop", "#dropAddress");
-    await drawRoute("rider", state.pickup, state.drop, 0);
-}
-
-function ridePayload() {
-    return {
-        riderId: state.user.id,
-        pickupAddress: state.pickup.name,
-        dropAddress: state.drop.name,
-        pickupLat: state.pickup.lat,
-        pickupLng: state.pickup.lng,
-        dropLat: state.drop.lat,
-        dropLng: state.drop.lng,
-        vehicleType: state.vehicleType
-    };
-}
-
-async function loadEstimates() {
-    await syncPlacesFromInputs();
-    const payload = ridePayload();
-    const query = new URLSearchParams({
-        pickupLat: payload.pickupLat,
-        pickupLng: payload.pickupLng,
-        dropLat: payload.dropLat,
-        dropLng: payload.dropLng
-    });
-    const estimates = await api(`/api/fare-estimates?${query}`);
-    $("#vehicleOptions").innerHTML = estimates.map(estimate => `
-        <div class="vehicle-card ${estimate.vehicleType === state.vehicleType ? "active" : ""}" data-type="${estimate.vehicleType}">
-            <img src="${vehicleImages[estimate.vehicleType]}" alt="${estimate.label}">
-            <strong>${estimate.label}</strong>
-            <span>${estimate.seats} seat${estimate.seats > 1 ? "s" : ""} | ${estimate.distanceKm} km | ${estimate.etaMinutes} min</span>
-            <strong>Rs ${estimate.fare}</strong>
-        </div>
-    `).join("");
-    document.querySelectorAll(".vehicle-card").forEach(card => {
-        card.addEventListener("click", async () => {
-            state.vehicleType = card.dataset.type;
-            $("#riderSelectedVehicle").textContent = card.querySelector("strong").textContent;
-            await loadEstimates();
-            await loadAvailableDrivers();
-        });
-    });
-    await loadAvailableDrivers();
-}
-
-async function loadAvailableDrivers() {
-    const drivers = await api(`/api/drivers/available?vehicleType=${state.vehicleType}`);
-    $("#availableDriverCount").textContent = `${drivers.length} online`;
-    $("#availableDrivers").innerHTML = drivers.length ? drivers.map(driver => `
-        <article class="driver-card">
-            <div class="driver-head">
-                <strong>${driver.name}</strong>
-                <span class="pill">${driver.vehicleLabel}</span>
-            </div>
-            <div class="driver-line"><img src="${vehicleImages[driver.vehicleType]}" alt="${driver.vehicleLabel}"><span>${driver.vehicle} | ${driver.number}</span></div>
-            <div class="metric-row">
-                <span>${starDisplay(driver.rating)} ${Number(driver.rating).toFixed(1)}</span>
-                <span>${formatWorkMinutes(driver.workMinutesToday)} today</span>
-                ${safetyBadge(driver.workStatus)}
-            </div>
-            <span class="subtle">${driver.seats} seats | Trips ${driver.trips}</span>
-        </article>
-    `).join("") : `<p class="subtle">No ${state.vehicleType} drivers are online right now.</p>`;
-}
-
-async function requestRide(event) {
-    event.preventDefault();
-    try {
-        await syncPlacesFromInputs();
-        setMessage("#riderStatus", "Sending request to nearby drivers...");
-        state.latestRide = await api("/api/rides", {
-            method: "POST",
-            body: JSON.stringify(ridePayload())
-        });
-        showRideNotice(state.latestRide);
-        await refreshRider();
-    } catch (error) {
-        setMessage("#riderStatus", error.message);
-    }
-}
-
-async function refreshRider() {
-    const rides = await api(`/api/riders/${state.user.id}/rides`);
-    state.latestRide = rides[0] || null;
-    $("#riderTripCount").textContent = rides.length;
-    $("#riderActiveStatus").textContent = state.latestRide?.status || "Idle";
-    await renderRiderRide();
-}
-
-async function renderRiderRide() {
-    const ride = state.latestRide;
-    showRideNotice(ride);
-    if (!ride) {
-        $("#riderRide").innerHTML = `<p class="subtle">No ride yet. Confirm a ride to send it to nearby drivers.</p>`;
-        $("#riderProgress").style.width = "0%";
-        return;
-    }
-    await drawRoute("rider", ridePoint(ride, "pickup"), ridePoint(ride, "drop"), ride.progressPercent);
-    updateMap("rider", ride.progressPercent, mapText(ride));
-    $("#riderRide").innerHTML = `
-        <article class="ride-card">
-            <div class="ride-head">
-                <strong>#${ride.id} ${shortName(ride.pickupAddress)} to ${shortName(ride.dropAddress)}</strong>
-                <span class="pill ${ride.status}">${ride.status}</span>
-            </div>
-            <span>${ride.vehicleLabel} | Rs ${ride.fare} | ${ride.distanceKm} km</span>
-            ${ride.driverName === "Searching"
-                ? `<span class="subtle">Waiting for driver to confirm your ride</span>`
-                : `<div class="driver-safety">
-                    <span><strong>${ride.driverName}</strong> | ${ride.vehicle} | ${ride.driverPhone}</span>
-                    <span>${starDisplay(ride.driverRating)} ${Number(ride.driverRating).toFixed(1)} | Worked ${formatWorkMinutes(ride.driverWorkMinutesToday)} today ${safetyBadge(ride.driverWorkStatus)}</span>
-                </div>`}
-            ${ride.status === "REQUESTED" ? `<div class="waiting-card"><span class="spinner"></span><div><strong>Waiting for driver to confirm</strong><span>Nearby ${ride.vehicleLabel.toLowerCase()} drivers can see your request now.</span></div></div>` : ""}
-            ${ride.status === "ACCEPTED" ? `<div class="otp-box">Start OTP: <strong>${ride.otp}</strong></div>` : ""}
-            ${ride.status === "COMPLETED" && !ride.paid ? paymentPanel(ride) : ""}
-            ${ride.status === "COMPLETED" && ride.paid ? paymentReceipt(ride) : ""}
-            ${ride.status === "COMPLETED" && ride.paid ? ratingControl(ride) : ""}
-            ${["REQUESTED", "ACCEPTED"].includes(ride.status) ? `<button onclick="cancelRide(${ride.id})">Cancel ride</button>` : ""}
-        </article>
-    `;
-}
-
-function showRideNotice(ride) {
-    const banner = $("#riderNotice");
-    if (!banner) return;
-    if (!ride || ["COMPLETED", "CANCELLED"].includes(ride.status)) {
-        banner.classList.add("hidden");
-        setMessage("#riderStatus", ride?.status === "COMPLETED" ? "Trip completed" : "Choose pickup and destination");
-        return;
-    }
+function RideNotice({ ride }) {
+    if (!ride || ["COMPLETED", "CANCELLED"].includes(ride.status)) return null;
     const messages = {
-        REQUESTED: ["Waiting for driver to confirm", "Your request is live. A driver will appear here after accepting the ride."],
+        REQUESTED: ["Waiting for driver to confirm", "Your request is live. A nearby driver can accept it now."],
         ACCEPTED: ["Driver confirmed your ride", `${ride.driverName} is assigned. Share OTP ${ride.otp} only after boarding.`],
         IN_PROGRESS: ["Ride in progress", `Live tracking is active. Trip progress is ${ride.progressPercent}%.`]
     };
     const [title, text] = messages[ride.status] || [ride.status, "Ride status updated."];
-    $("#riderNoticeTitle").textContent = title;
-    $("#riderNoticeText").textContent = text;
-    setMessage("#riderStatus", title);
-    banner.dataset.status = ride.status;
-    banner.classList.remove("hidden");
+    return h("div", { className: "status-banner", "data-status": ride.status, role: "status" },
+        h("div", { className: "status-icon" }),
+        h("div", null, h("strong", null, title), h("span", null, text))
+    );
 }
 
-async function refreshDriver() {
-    const [driver, requests, trips] = await Promise.all([
-        api(`/api/drivers/${state.user.driverId}`),
-        api(`/api/drivers/${state.user.driverId}/requests`),
-        api(`/api/drivers/${state.user.driverId}/rides`)
-    ]);
-    state.driver = driver;
-    $("#driverRequestCount").textContent = requests.length;
-    $("#driverTripCount").textContent = trips.length;
-    $("#driverWorkHours").textContent = formatWorkMinutes(driver.workMinutesToday);
-    $("#driverOnlineStatus").textContent = driver.onDuty ? "On duty" : "Offline";
-    renderDriverSafety(driver);
-    renderDriverRequests(requests);
-    await renderDriverTrips(trips);
+function DriverCard({ driver }) {
+    return h("article", { className: "driver-card" },
+        h("div", { className: "driver-head" },
+            h("strong", null, driver.name),
+            h("span", { className: "pill" }, driver.vehicleLabel)
+        ),
+        h("div", { className: "driver-line" },
+            h("img", { src: vehicleImages[driver.vehicleType], alt: driver.vehicleLabel }),
+            h("span", null, `${driver.vehicle} | ${driver.number}`)
+        ),
+        h("div", { className: "metric-row" },
+            h("span", null, h(Stars, { rating: driver.rating }), ` ${Number(driver.rating).toFixed(1)}`),
+            h("span", null, `${formatWorkMinutes(driver.workMinutesToday)} today`),
+            h(SafetyBadge, { status: driver.workStatus })
+        ),
+        h("span", { className: "subtle" }, `${driver.seats} seats | Trips ${driver.trips}`)
+    );
 }
 
-function renderDriverSafety(driver) {
-    const minutes = Number(driver.workMinutesToday) || 0;
-    const safeLimit = Number(driver.safeDailyMinutes) || 480;
-    const overtimeLimit = Number(driver.overtimeDailyMinutes) || 600;
+function PaymentPanel({ ride, paymentMethod, setPaymentMethod, onPay }) {
+    return h("div", { className: "payment-box" },
+        h("div", { className: "payment-head" },
+            h("div", null, h("strong", null, "Complete payment"), h("span", null, `Fare total Rs ${ride.fare} for ${ride.vehicleLabel}`)),
+            h("span", { className: "payment-total" }, `Rs ${ride.fare}`)
+        ),
+        h("div", { className: "payment-methods", role: "group", "aria-label": "Choose payment method" },
+            paymentMethods.map(method => h("button", {
+                key: method.id,
+                type: "button",
+                className: cx("payment-option", paymentMethod === method.id && "active"),
+                onClick: () => setPaymentMethod(method.id)
+            }, h("strong", null, method.label), h("span", null, method.detail)))
+        ),
+        h("button", { className: "primary", onClick: () => onPay(ride.id) }, `Pay with ${paymentMethod}`)
+    );
+}
+
+function Receipt({ ride }) {
+    return h("div", { className: "receipt-box" },
+        h("div", null, h("strong", null, "Payment completed"), h("span", null, `${ride.paymentMethod || "UPI"} | ${ride.paymentReference || "Receipt generated"}`)),
+        h("span", null, ride.paidAt || "Paid")
+    );
+}
+
+function RatingControl({ ride, onRate }) {
+    if (ride.riderRating) {
+        return h("div", { className: "rating-summary" },
+            h(Stars, { rating: ride.riderRating }),
+            h("span", null, `Your rating updated ${ride.driverName}'s score.`)
+        );
+    }
+    return h("div", { className: "rating-box" },
+        h("strong", null, "Rate your driver"),
+        h("div", { className: "star-actions", role: "group", "aria-label": "Rate driver" },
+            [1, 2, 3, 4, 5].map(star => h("button", {
+                key: star,
+                type: "button",
+                title: `${star} star${star > 1 ? "s" : ""}`,
+                onClick: () => onRate(ride.id, star)
+            }, "★"))
+        )
+    );
+}
+
+function RiderRideCard({ ride, paymentMethod, setPaymentMethod, onPay, onCancel, onRate }) {
+    if (!ride) return h("p", { className: "subtle" }, "No ride yet. Confirm a ride to send it to nearby drivers.");
+    return h("article", { className: "ride-card" },
+        h("div", { className: "ride-head" },
+            h("strong", null, `#${ride.id} ${shortName(ride.pickupAddress)} to ${shortName(ride.dropAddress)}`),
+            h("span", { className: cx("pill", ride.status) }, ride.status)
+        ),
+        h("span", null, `${ride.vehicleLabel} | Rs ${ride.fare} | ${ride.distanceKm} km`),
+        ride.driverName === "Searching"
+            ? h("span", { className: "subtle" }, "Waiting for driver to confirm your ride")
+            : h("div", { className: "driver-safety" },
+                h("span", null, h("strong", null, ride.driverName), ` | ${ride.vehicle} | ${ride.driverPhone}`),
+                h("span", null,
+                    h(Stars, { rating: ride.driverRating }),
+                    ` ${Number(ride.driverRating).toFixed(1)} | Worked ${formatWorkMinutes(ride.driverWorkMinutesToday)} today `,
+                    h(SafetyBadge, { status: ride.driverWorkStatus })
+                )
+            ),
+        ride.status === "REQUESTED" ? h("div", { className: "waiting-card" },
+            h("span", { className: "spinner" }),
+            h("div", null, h("strong", null, "Waiting for driver to confirm"), h("span", null, `Nearby ${ride.vehicleLabel.toLowerCase()} drivers can see your request now.`))
+        ) : null,
+        ride.status === "ACCEPTED" ? h("div", { className: "otp-box" }, "Start OTP: ", h("strong", null, ride.otp)) : null,
+        ride.status === "COMPLETED" && !ride.paid ? h(PaymentPanel, { ride, paymentMethod, setPaymentMethod, onPay }) : null,
+        ride.status === "COMPLETED" && ride.paid ? h(Receipt, { ride }) : null,
+        ride.status === "COMPLETED" && ride.paid ? h(RatingControl, { ride, onRate }) : null,
+        ["REQUESTED", "ACCEPTED"].includes(ride.status) ? h("button", { onClick: () => onCancel(ride.id) }, "Cancel ride") : null
+    );
+}
+
+function RiderDashboard(props) {
+    const {
+        pickupAddress, setPickupAddress, dropAddress, setDropAddress, pickup, drop,
+        setPickup, setDrop, estimates, vehicleType, setVehicleType, availableDrivers,
+        latestRide, status, loadEstimates, requestRide, refreshRider, paymentMethod,
+        setPaymentMethod, payRide, cancelRide, rateRide
+    } = props;
+    const selectedEstimate = estimates.find(estimate => estimate.vehicleType === vehicleType);
+
+    return h("section", { className: "app-grid" },
+        h(DashboardStrip, {
+            items: [
+                { label: "Total bookings", value: props.ridesCount },
+                { label: "Current trip", value: latestRide?.status || "Idle" },
+                { label: "Selected vehicle", value: selectedEstimate?.label || "Cab" }
+            ]
+        }),
+        h(RideNotice, { ride: latestRide }),
+        h("div", { className: "panel booking" },
+            SectionTitle({ title: "Book a ride", meta: status }),
+            h("form", { onSubmit: requestRide },
+                h("div", { className: "grid two" },
+                    h(PlaceInput, {
+                        label: "Pickup",
+                        value: pickupAddress,
+                        onInput: setPickupAddress,
+                        onSelect: place => {
+                            setPickup(place);
+                            setPickupAddress(place.name);
+                        }
+                    }),
+                    h(PlaceInput, {
+                        label: "Destination",
+                        value: dropAddress,
+                        onInput: setDropAddress,
+                        onSelect: place => {
+                            setDrop(place);
+                            setDropAddress(place.name);
+                        }
+                    })
+                ),
+                h(VehicleOptions, {
+                    estimates,
+                    vehicleType,
+                    onSelect: type => {
+                        setVehicleType(type);
+                        loadEstimates(type);
+                    }
+                }),
+                h("div", { className: "actions" },
+                    h("button", { type: "button", onClick: () => loadEstimates(vehicleType) }, "Show vehicles"),
+                    h("button", { type: "submit", className: "primary" }, "Confirm ride")
+                )
+            )
+        ),
+        h(MapPanel, {
+            title: "Live Map",
+            meta: mapText(latestRide),
+            pickup: latestRide ? ridePoint(latestRide, "pickup") : pickup,
+            drop: latestRide ? ridePoint(latestRide, "drop") : drop,
+            progress: latestRide?.progressPercent || 0
+        }),
+        h("div", { className: "panel" },
+            SectionTitle({ title: "Available Drivers", meta: `${availableDrivers.length} online` }),
+            h("div", { className: "driver-list" },
+                availableDrivers.length
+                    ? availableDrivers.map(driver => h(DriverCard, { key: driver.id, driver }))
+                    : h("p", { className: "subtle" }, `No ${vehicleType} drivers are online right now.`)
+            )
+        ),
+        h("div", { className: "panel" },
+            SectionTitle({
+                title: "Your ride",
+                action: h("button", { onClick: refreshRider }, "Refresh")
+            }),
+            h("div", { className: "ride-list" },
+                h(RiderRideCard, { ride: latestRide, paymentMethod, setPaymentMethod, onPay: payRide, onCancel: cancelRide, onRate: rateRide })
+            )
+        )
+    );
+}
+
+function DriverSafetyPanel({ driver, onToggle }) {
+    const minutes = Number(driver?.workMinutesToday) || 0;
+    const safeLimit = Number(driver?.safeDailyMinutes) || 480;
+    const overtimeLimit = Number(driver?.overtimeDailyMinutes) || 600;
     const remainingSafe = Math.max(0, safeLimit - minutes);
     const remainingOvertime = Math.max(0, overtimeLimit - minutes);
-    $("#driverSafetyBadge").textContent = workStatusLabel(driver.workStatus);
-    $("#driverSafetyBadge").className = `safety-badge driver-safety-badge ${driver.workStatus}`;
-    $("#driverSafetyText").textContent = driver.workStatus === "SAFE"
+    const status = driver?.workStatus || "UNKNOWN";
+    const text = status === "SAFE"
         ? `${formatWorkMinutes(remainingSafe)} safe driving time left before rest is advised.`
-        : driver.workStatus === "NEEDS_REST"
+        : status === "NEEDS_REST"
             ? `Rest is advised now. ${formatWorkMinutes(remainingOvertime)} left before overtime risk.`
-            : "Overtime risk reached. Go offline and rest before accepting more trips.";
-    $("#driverSafetyMeter").style.width = `${Math.min(100, Math.round((minutes / overtimeLimit) * 100))}%`;
-    $("#driverDutyStats").innerHTML = [
-        dutyMetric("Worked today", formatWorkMinutes(minutes)),
-        dutyMetric("Safe limit", formatWorkMinutes(safeLimit)),
-        dutyMetric("Overtime limit", formatWorkMinutes(overtimeLimit)),
-        dutyMetric("Trips completed", driver.trips)
-    ].join("");
-    $("#driverDutyToggle").textContent = driver.onDuty ? "Go offline and rest" : "Start duty";
-    $("#driverDutyToggle").classList.toggle("primary", !driver.onDuty);
-    $("#driverDutyToggle").classList.toggle("danger", driver.workStatus === "OVERTIME");
+            : status === "OVERTIME"
+                ? "Overtime risk reached. Go offline and rest before accepting more trips."
+                : "Driver profile will load after login.";
+
+    return h("div", { className: "panel driver-safety-panel" },
+        SectionTitle({
+            title: "Driver Safety Hours",
+            meta: text,
+            action: h(SafetyBadge, { status })
+        }),
+        h("div", { className: "safety-meter" },
+            h("span", { style: { width: `${Math.min(100, Math.round((minutes / overtimeLimit) * 100))}%` } })
+        ),
+        h("div", { className: "duty-stats" },
+            [
+                ["Worked today", formatWorkMinutes(minutes)],
+                ["Safe limit", formatWorkMinutes(safeLimit)],
+                ["Overtime limit", formatWorkMinutes(overtimeLimit)],
+                ["Trips completed", driver?.trips || 0]
+            ].map(([label, value]) => h("div", { key: label }, h("strong", null, value), h("span", null, label)))
+        ),
+        h("div", { className: "actions" },
+            h("button", {
+                className: cx(!driver?.onDuty && "primary", status === "OVERTIME" && "danger"),
+                onClick: onToggle
+            }, driver?.onDuty ? "Go offline and rest" : "Start duty")
+        )
+    );
 }
 
-function renderDriverRequests(requests) {
-    $("#driverRequests").innerHTML = requests.length ? requests.map(ride => `
-        <article class="ride-card">
-            <div class="ride-head">
-                <strong>#${ride.id} ${ride.riderName}</strong>
-                <span class="pill">${ride.vehicleLabel}</span>
-            </div>
-            <span>${shortName(ride.pickupAddress)} to ${shortName(ride.dropAddress)}</span>
-            <span>Rs ${ride.fare} | ${ride.distanceKm} km</span>
-            <button class="primary" onclick="acceptRide(${ride.id})">Accept Ride</button>
-        </article>
-    `).join("") : `<p class="subtle">No new matching ride requests yet.</p>`;
+function DriverRequestCard({ ride, onAccept }) {
+    return h("article", { className: "ride-card" },
+        h("div", { className: "ride-head" },
+            h("strong", null, `#${ride.id} ${ride.riderName}`),
+            h("span", { className: "pill" }, ride.vehicleLabel)
+        ),
+        h("span", null, `${shortName(ride.pickupAddress)} to ${shortName(ride.dropAddress)}`),
+        h("span", null, `Rs ${ride.fare} | ${ride.distanceKm} km`),
+        h("button", { className: "primary", onClick: () => onAccept(ride.id) }, "Accept Ride")
+    );
 }
 
-async function renderDriverTrips(trips) {
+function DriverTripCard({ ride, onStart, onProgress }) {
+    const [otp, setOtp] = useState("");
+    return h("article", { className: "ride-card" },
+        h("div", { className: "ride-head" },
+            h("strong", null, `#${ride.id} ${ride.riderName}`),
+            h("span", { className: cx("pill", ride.status) }, ride.status)
+        ),
+        h("span", null, `${shortName(ride.pickupAddress)} to ${shortName(ride.dropAddress)}`),
+        h("span", null, `${ride.vehicleLabel} | Rs ${ride.fare} | OTP required from user`),
+        ride.status === "ACCEPTED" ? h("div", { className: "actions" },
+            h("input", {
+                className: "otp-input",
+                value: otp,
+                onChange: event => setOtp(event.target.value),
+                placeholder: "Enter OTP"
+            }),
+            h("button", { className: "primary", onClick: () => onStart(ride.id, otp) }, "Verify & Start")
+        ) : null,
+        ride.status === "IN_PROGRESS" ? h("button", { className: "primary", onClick: () => onProgress(ride.id) }, "Update Live Tracking") : null,
+        ride.status === "COMPLETED" && !ride.paid ? h("span", { className: "subtle" }, `Waiting for user payment of Rs ${ride.fare}`) : null,
+        ride.status === "COMPLETED" && ride.paid ? h("span", { className: "subtle" }, `Paid by ${ride.paymentMethod || "UPI"} | ${ride.paymentReference || "Receipt generated"}`) : null
+    );
+}
+
+function DriverDashboard({ driver, requests, trips, refreshDriver, acceptRide, startRide, progressRide, toggleDriverDuty, driverMessage }) {
     const active = trips.find(ride => ["ACCEPTED", "IN_PROGRESS", "COMPLETED"].includes(ride.status));
-    if (active) {
-        await drawRoute("driver", ridePoint(active, "pickup"), ridePoint(active, "drop"), active.progressPercent);
-        updateMap("driver", active.progressPercent, mapText(active));
-    }
-    $("#driverTrips").innerHTML = trips.length ? trips.map(ride => `
-        <article class="ride-card">
-            <div class="ride-head">
-                <strong>#${ride.id} ${ride.riderName}</strong>
-                <span class="pill ${ride.status}">${ride.status}</span>
-            </div>
-            <span>${shortName(ride.pickupAddress)} to ${shortName(ride.dropAddress)}</span>
-            <span>${ride.vehicleLabel} | Rs ${ride.fare} | OTP required from user</span>
-            ${driverButtons(ride)}
-        </article>
-    `).join("") : `<p class="subtle">Accepted trips will appear here.</p>`;
+
+    return h("section", { className: "app-grid" },
+        h(DashboardStrip, {
+            items: [
+                { label: "New requests", value: requests.length },
+                { label: "Assigned trips", value: trips.length },
+                { label: "Worked today", value: formatWorkMinutes(driver?.workMinutesToday || 0) },
+                { label: "Availability", value: driver?.onDuty ? "On duty" : "Offline" }
+            ]
+        }),
+        h(DriverSafetyPanel, { driver, onToggle: toggleDriverDuty }),
+        driverMessage ? h("div", { className: "status-banner", role: "status" },
+            h("div", { className: "status-icon" }),
+            h("div", null, h("strong", null, "Driver update"), h("span", null, driverMessage))
+        ) : null,
+        h("div", { className: "panel" },
+            SectionTitle({
+                title: "New Ride Requests",
+                action: h("button", { onClick: refreshDriver }, "Refresh")
+            }),
+            h("div", { className: "ride-list" },
+                requests.length
+                    ? requests.map(ride => h(DriverRequestCard, { key: ride.id, ride, onAccept: acceptRide }))
+                    : h("p", { className: "subtle" }, "No new matching ride requests yet.")
+            )
+        ),
+        h(MapPanel, {
+            title: "Driver Tracking",
+            meta: active ? mapText(active) : "Accept a ride",
+            pickup: active ? ridePoint(active, "pickup") : defaultPickup,
+            drop: active ? ridePoint(active, "drop") : defaultDrop,
+            progress: active?.progressPercent || 0
+        }),
+        h("div", { className: "panel driver-active" },
+            SectionTitle({ title: "Accepted Trips" }),
+            h("div", { className: "ride-list" },
+                trips.length
+                    ? trips.map(ride => h(DriverTripCard, { key: ride.id, ride, onStart: startRide, onProgress: progressRide }))
+                    : h("p", { className: "subtle" }, "Accepted trips will appear here.")
+            )
+        )
+    );
 }
 
-function driverButtons(ride) {
-    if (ride.status === "ACCEPTED") {
-        return `
-            <div class="actions">
-                <input class="otp-input" id="otp-${ride.id}" placeholder="Enter OTP">
-                <button class="primary" onclick="startRide(${ride.id})">Verify & Start</button>
-            </div>
-        `;
-    }
-    if (ride.status === "IN_PROGRESS") {
-        return `<button class="primary" onclick="progressRide(${ride.id})">Update Live Tracking</button>`;
-    }
-    if (ride.status === "COMPLETED" && !ride.paid) {
-        return `<span class="subtle">Waiting for user payment of Rs ${ride.fare}</span>`;
-    }
-    if (ride.status === "COMPLETED" && ride.paid) {
-        return `<span class="subtle">Paid by ${ride.paymentMethod || "UPI"} | ${ride.paymentReference || "Receipt generated"}</span>`;
-    }
-    return "";
-}
+function App() {
+    const [authMode, setAuthMode] = useState("login");
+    const [role, setRole] = useState("RIDER");
+    const [user, setUser] = useState(null);
+    const [authMessage, setAuthMessage] = useState("");
+    const [pickup, setPickup] = useState(defaultPickup);
+    const [drop, setDrop] = useState(defaultDrop);
+    const [pickupAddress, setPickupAddress] = useState(defaultPickup.name);
+    const [dropAddress, setDropAddress] = useState(defaultDrop.name);
+    const [vehicleType, setVehicleType] = useState("CAB");
+    const [paymentMethod, setPaymentMethod] = useState("UPI");
+    const [estimates, setEstimates] = useState([]);
+    const [availableDrivers, setAvailableDrivers] = useState([]);
+    const [latestRide, setLatestRide] = useState(null);
+    const [ridesCount, setRidesCount] = useState(0);
+    const [riderStatus, setRiderStatus] = useState("Choose pickup and destination");
+    const [driver, setDriver] = useState(null);
+    const [driverRequests, setDriverRequests] = useState([]);
+    const [driverTrips, setDriverTrips] = useState([]);
+    const [driverMessage, setDriverMessage] = useState("");
 
-async function acceptRide(id) {
-    await api(`/api/rides/${id}/accept`, {
-        method: "PATCH",
-        body: JSON.stringify({ driverId: state.user.driverId })
-    });
-    await refreshDriver();
-}
+    async function submitAuth(form) {
+        setAuthMessage("");
+        try {
+            const payload = {
+                name: form.name,
+                phone: form.phone,
+                password: form.password,
+                role,
+                vehicleName: form.vehicleName,
+                vehicleNumber: form.vehicleNumber,
+                vehicleType: form.vehicleType
+            };
+            const loggedIn = await api(`/api/auth/${authMode === "login" ? "login" : "signup"}`, {
+                method: "POST",
+                body: JSON.stringify(payload)
+            });
+            setUser(loggedIn);
+        } catch (error) {
+            setAuthMessage(error.message);
+        }
+    }
 
-async function startRide(id) {
-    try {
-        await api(`/api/rides/${id}/start`, {
+    async function resolvePoint(point, typed, label) {
+        if (typed.trim() === point.name) return point;
+        const places = await searchPlaces(typed);
+        if (!places.length) throw new Error(`Select a valid ${label} place`);
+        return {
+            name: places[0].display_name,
+            lat: Number(places[0].lat),
+            lng: Number(places[0].lon)
+        };
+    }
+
+    async function resolvePlaces() {
+        const resolvedPickup = await resolvePoint(pickup, pickupAddress, "pickup");
+        const resolvedDrop = await resolvePoint(drop, dropAddress, "destination");
+        setPickup(resolvedPickup);
+        setDrop(resolvedDrop);
+        setPickupAddress(resolvedPickup.name);
+        setDropAddress(resolvedDrop.name);
+        return { pickup: resolvedPickup, drop: resolvedDrop };
+    }
+
+    function ridePayload(points, type = vehicleType) {
+        return {
+            riderId: user.id,
+            pickupAddress: points.pickup.name,
+            dropAddress: points.drop.name,
+            pickupLat: points.pickup.lat,
+            pickupLng: points.pickup.lng,
+            dropLat: points.drop.lat,
+            dropLng: points.drop.lng,
+            vehicleType: type
+        };
+    }
+
+    async function loadAvailableDrivers(type = vehicleType) {
+        const drivers = await api(`/api/drivers/available?vehicleType=${type}`);
+        setAvailableDrivers(drivers);
+    }
+
+    async function loadEstimates(type = vehicleType) {
+        try {
+            setRiderStatus("Loading fare and driver options...");
+            const points = await resolvePlaces();
+            const payload = ridePayload(points, type);
+            const query = new URLSearchParams({
+                pickupLat: payload.pickupLat,
+                pickupLng: payload.pickupLng,
+                dropLat: payload.dropLat,
+                dropLng: payload.dropLng
+            });
+            const nextEstimates = await api(`/api/fare-estimates?${query}`);
+            setEstimates(nextEstimates);
+            await loadAvailableDrivers(type);
+            setRiderStatus("Choose pickup and destination");
+        } catch (error) {
+            setRiderStatus(error.message);
+        }
+    }
+
+    async function requestRide(event) {
+        event.preventDefault();
+        try {
+            setRiderStatus("Sending request to nearby drivers...");
+            const points = await resolvePlaces();
+            const ride = await api("/api/rides", {
+                method: "POST",
+                body: JSON.stringify(ridePayload(points))
+            });
+            setLatestRide(ride);
+            await refreshRider();
+        } catch (error) {
+            setRiderStatus(error.message);
+        }
+    }
+
+    async function refreshRider() {
+        if (!user || user.role !== "RIDER") return;
+        const rides = await api(`/api/riders/${user.id}/rides`);
+        setRidesCount(rides.length);
+        setLatestRide(rides[0] || null);
+    }
+
+    async function refreshDriver() {
+        if (!user || user.role !== "DRIVER") return;
+        const [driverPayload, requests, trips] = await Promise.all([
+            api(`/api/drivers/${user.driverId}`),
+            api(`/api/drivers/${user.driverId}/requests`),
+            api(`/api/drivers/${user.driverId}/rides`)
+        ]);
+        setDriver(driverPayload);
+        setDriverRequests(requests);
+        setDriverTrips(trips);
+    }
+
+    async function acceptRide(id) {
+        await api(`/api/rides/${id}/accept`, {
             method: "PATCH",
-            body: JSON.stringify({ otp: $(`#otp-${id}`).value })
+            body: JSON.stringify({ driverId: user.driverId })
         });
         await refreshDriver();
-    } catch (error) {
-        $("#driverMapHint").textContent = error.message;
     }
+
+    async function startRide(id, otp) {
+        try {
+            setDriverMessage("");
+            await api(`/api/rides/${id}/start`, {
+                method: "PATCH",
+                body: JSON.stringify({ otp })
+            });
+            await refreshDriver();
+        } catch (error) {
+            setDriverMessage(error.message);
+        }
+    }
+
+    async function progressRide(id) {
+        await api(`/api/rides/${id}/progress`, { method: "PATCH", body: "{}" });
+        await refreshDriver();
+    }
+
+    async function payRide(id) {
+        await api(`/api/rides/${id}/pay`, {
+            method: "PATCH",
+            body: JSON.stringify({ method: paymentMethod })
+        });
+        await refreshRider();
+    }
+
+    async function cancelRide(id) {
+        await api(`/api/rides/${id}/cancel`, { method: "PATCH", body: "{}" });
+        await refreshRider();
+    }
+
+    async function rateRide(id, rating) {
+        await api(`/api/rides/${id}/rate`, {
+            method: "PATCH",
+            body: JSON.stringify({ rating })
+        });
+        setRiderStatus("Thanks for the feedback");
+        await refreshRider();
+    }
+
+    async function toggleDriverDuty() {
+        if (!driver) return;
+        await api(`/api/drivers/${user.driverId}/availability`, {
+            method: "PATCH",
+            body: JSON.stringify({ available: !driver.onDuty })
+        });
+        await refreshDriver();
+    }
+
+    useEffect(() => {
+        if (!user) return;
+        if (user.role === "RIDER") {
+            loadEstimates(vehicleType);
+            refreshRider();
+        }
+        if (user.role === "DRIVER") {
+            refreshDriver();
+        }
+    }, [user]);
+
+    useEffect(() => {
+        if (!user) return;
+        const timer = setInterval(() => {
+            if (user.role === "RIDER") refreshRider();
+            if (user.role === "DRIVER") refreshDriver();
+        }, 6000);
+        return () => clearInterval(timer);
+    }, [user, paymentMethod]);
+
+    const view = user ? user.role.toLowerCase() : "auth";
+
+    return h(React.Fragment, null,
+        h(Topbar, { user, view, onLogout: () => window.location.reload() }),
+        h("main", { className: "shell" },
+            !user ? h(AuthView, { role, setRole, authMode, setAuthMode, onSubmit: submitAuth, message: authMessage }) : null,
+            user?.role === "RIDER" ? h(RiderDashboard, {
+                pickupAddress, setPickupAddress, dropAddress, setDropAddress,
+                pickup, drop, setPickup, setDrop, estimates, vehicleType, setVehicleType,
+                availableDrivers, latestRide, status: riderStatus, loadEstimates, requestRide,
+                refreshRider, paymentMethod, setPaymentMethod, payRide, cancelRide, rateRide,
+                ridesCount
+            }) : null,
+            user?.role === "DRIVER" ? h(DriverDashboard, {
+                driver, requests: driverRequests, trips: driverTrips, refreshDriver,
+                acceptRide, startRide, progressRide, toggleDriverDuty, driverMessage
+            }) : null
+        )
+    );
 }
 
-async function progressRide(id) {
-    await api(`/api/rides/${id}/progress`, { method: "PATCH", body: "{}" });
-    await refreshDriver();
-}
-
-async function payRide(id) {
-    await api(`/api/rides/${id}/pay`, {
-        method: "PATCH",
-        body: JSON.stringify({ method: state.paymentMethod })
-    });
-    await refreshRider();
-}
-
-async function selectPaymentMethod(method) {
-    state.paymentMethod = method;
-    await renderRiderRide();
-}
-
-async function toggleDriverDuty() {
-    if (!state.driver) return;
-    await api(`/api/drivers/${state.user.driverId}/availability`, {
-        method: "PATCH",
-        body: JSON.stringify({ available: !state.driver.onDuty })
-    });
-    await refreshDriver();
-}
-
-async function cancelRide(id) {
-    await api(`/api/rides/${id}/cancel`, { method: "PATCH", body: "{}" });
-    await refreshRider();
-}
-
-async function rateRide(id, rating) {
-    await api(`/api/rides/${id}/rate`, {
-        method: "PATCH",
-        body: JSON.stringify({ rating })
-    });
-    setMessage("#riderStatus", "Thanks for the feedback");
-    await refreshRider();
-}
-
-function ridePoint(ride, type) {
-    return type === "pickup"
-        ? { name: ride.pickupAddress, lat: ride.pickupLat, lng: ride.pickupLng }
-        : { name: ride.dropAddress, lat: ride.dropLat, lng: ride.dropLng };
-}
-
-function shortName(value) {
-    return value.split(",").slice(0, 2).join(",").trim();
-}
-
-function mapText(ride) {
-    if (ride.status === "REQUESTED") return "Waiting for driver to confirm";
-    if (ride.status === "ACCEPTED") return "Driver accepted | share OTP";
-    if (ride.status === "IN_PROGRESS") return `Travelling | ${ride.progressPercent}%`;
-    if (ride.status === "COMPLETED" && !ride.paid) return "Arrived | payment pending";
-    if (ride.status === "COMPLETED") return "Trip completed";
-    return ride.status;
-}
-
-function updateMap(kind, progress, label) {
-    const progressBar = $(`#${kind}Progress`);
-    const hint = kind === "rider" ? $("#mapHint") : $("#driverMapHint");
-    const clamped = Math.max(0, Math.min(100, progress));
-    moveCar(kind, clamped);
-    progressBar.style.width = `${clamped}%`;
-    hint.textContent = label;
-}
-
-document.querySelectorAll(".role-tab").forEach(button => {
-    button.addEventListener("click", () => {
-        state.role = button.dataset.role;
-        document.querySelectorAll(".role-tab").forEach(item => item.classList.remove("active"));
-        button.classList.add("active");
-        configureAuth();
-    });
-});
-
-$("#switchAuthBtn").addEventListener("click", () => {
-    state.authMode = state.authMode === "login" ? "signup" : "login";
-    configureAuth();
-});
-$("#authForm").addEventListener("submit", submitAuth);
-$("#rideForm").addEventListener("submit", requestRide);
-$("#estimateBtn").addEventListener("click", loadEstimates);
-$("#refreshRiderBtn").addEventListener("click", refreshRider);
-$("#refreshDriverBtn").addEventListener("click", refreshDriver);
-$("#driverDutyToggle").addEventListener("click", toggleDriverDuty);
-$("#logoutBtn").addEventListener("click", () => window.location.reload());
-
-setupAutocomplete("#pickupAddress", "#pickupResults", "pickup");
-setupAutocomplete("#dropAddress", "#dropResults", "drop");
-configureAuth();
-
-setInterval(async () => {
-    if (!state.user) return;
-    if (state.user.role === "RIDER") await refreshRider();
-    if (state.user.role === "DRIVER") await refreshDriver();
-}, 6000);
+ReactDOM.createRoot(document.getElementById("root")).render(h(App));
