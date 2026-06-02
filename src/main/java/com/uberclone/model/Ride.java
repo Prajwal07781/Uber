@@ -44,7 +44,9 @@ public class Ride {
     private String startOtp;
     private int progressPercent;
     private LocalDateTime requestedAt = LocalDateTime.now();
+    private LocalDateTime startedAt;
     private LocalDateTime completedAt;
+    private Long durationMinutes;
     private LocalDateTime paidAt;
 
     public Long getId() {
@@ -199,12 +201,28 @@ public class Ride {
         return requestedAt;
     }
 
+    public LocalDateTime getStartedAt() {
+        return startedAt;
+    }
+
+    public void setStartedAt(LocalDateTime startedAt) {
+        this.startedAt = startedAt;
+    }
+
     public LocalDateTime getCompletedAt() {
         return completedAt;
     }
 
     public void setCompletedAt(LocalDateTime completedAt) {
         this.completedAt = completedAt;
+    }
+
+    public Long getDurationMinutes() {
+        return durationMinutes;
+    }
+
+    public void setDurationMinutes(Long durationMinutes) {
+        this.durationMinutes = durationMinutes;
     }
 
     public LocalDateTime getPaidAt() {

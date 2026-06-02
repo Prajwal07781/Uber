@@ -7,15 +7,17 @@ A full-stack Java Uber-style ride booking application built with Spring Boot, Re
 - Persistent SQL database for riders, drivers, vehicles, and rides
 - Rider and driver seed data for quick demo
 - Login and signup for users and drivers
+- Signed bearer-token authentication for protected APIs
 - Correct phone/password authentication
 - Driver vehicle registration during signup
 - Fare estimation for Bike, Auto, Cab (5 seater), and SUV (7 seater)
 - Real map UI with OpenStreetMap and Leaflet
 - Pickup and destination autocomplete with Nominatim
 - Route drawing with OSRM
-- Available driver listing by selected vehicle type
-- Driver-side ride request queue
+- Available driver listing by selected vehicle type, pickup proximity, safety status, rating, and trips
+- Driver-side ride request queue sorted by nearest pickup
 - Driver accept flow
+- WebSocket live ride updates for rider and driver dashboards
 - OTP verification before starting the ride
 - Live tracking simulation from pickup to destination
 - Ride statuses: requested, accepted, in progress, completed, cancelled
@@ -38,6 +40,8 @@ A full-stack Java Uber-style ride booking application built with Spring Boot, Re
 - Leaflet + OpenStreetMap tiles
 - Nominatim place search
 - OSRM route service
+- Signed HMAC auth tokens
+- Native WebSocket ride events
 
 ## Run
 
@@ -118,6 +122,18 @@ PATCH  /api/rides/{id}/rate
 GET    /api/drivers
 GET    /api/drivers/available
 PATCH  /api/drivers/{id}/availability
+```
+
+All `/api/**` endpoints except `/api/auth/login` and `/api/auth/signup` require:
+
+```text
+Authorization: Bearer <token from login/signup>
+```
+
+Live ride updates connect at:
+
+```text
+ws://localhost:8081/ws/rides?token=<token>
 ```
 
 ## Project Structure

@@ -9,7 +9,6 @@ import jakarta.persistence.Id;
 import jakarta.persistence.OneToOne;
 import jakarta.validation.constraints.NotBlank;
 
-import java.time.Duration;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 
@@ -164,9 +163,6 @@ public class DriverProfile {
 
     public void stopDuty() {
         refreshDutyDay();
-        if (isOnDuty() && dutyStartedAt != null) {
-            dutyMinutesToday = getDutyMinutesToday() + Math.max(0, Duration.between(dutyStartedAt, LocalDateTime.now()).toMinutes());
-        }
         onDuty = false;
         available = false;
         dutyStartedAt = null;
@@ -174,14 +170,7 @@ public class DriverProfile {
 
     public long currentDutyMinutes() {
         LocalDate today = LocalDate.now();
-        long minutes = today.equals(dutyDate) ? getDutyMinutesToday() : 0;
-        if (isOnDuty() && dutyStartedAt != null) {
-            LocalDateTime countFrom = dutyStartedAt.toLocalDate().isBefore(today)
-                    ? today.atStartOfDay()
-                    : dutyStartedAt;
-            minutes += Math.max(0, Duration.between(countFrom, LocalDateTime.now()).toMinutes());
-        }
-        return minutes;
+        return today.equals(dutyDate) ? getDutyMinutesToday() : 0;
     }
 
     public String dutyStatus() {
@@ -197,11 +186,20 @@ public class DriverProfile {
 
     public void refreshDutyDay() {
         LocalDate today = LocalDate.now();
-        if (dutyDate == null || !today.equals(dutyDate)) {
-            dutyDate = today;
+        refreshDutyDay(today);
+    }
+
+    public void addCompletedRideMinutes(long minutes, LocalDate completedDate) {
+        refreshDutyDay(completedDate == null ? LocalDate.now() : completedDate);
+        dutyMinutesToday = getDutyMinutesToday() + Math.max(0, minutes);
+    }
+
+    private void refreshDutyDay(LocalDate date) {
+        if (dutyDate == null || !date.equals(dutyDate)) {
+            dutyDate = date;
             dutyMinutesToday = 0L;
             if (isOnDuty()) {
-                dutyStartedAt = today.atStartOfDay();
+                dutyStartedAt = date.atStartOfDay();
             }
         }
     }

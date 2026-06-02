@@ -9,10 +9,14 @@ import com.uberclone.model.VehicleType;
 import com.uberclone.repository.AppUserRepository;
 import com.uberclone.repository.DriverProfileRepository;
 import com.uberclone.repository.RideRepository;
+import com.uberclone.websocket.RideEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Duration;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Random;
 
@@ -22,14 +26,17 @@ public class RideService {
     private final AppUserRepository userRepository;
     private final DriverProfileRepository driverRepository;
     private final GeoService geoService;
+    private final RideEventPublisher rideEventPublisher;
     private final Random random = new Random();
 
     public RideService(RideRepository rideRepository, AppUserRepository userRepository,
-                       DriverProfileRepository driverRepository, GeoService geoService) {
+                       DriverProfileRepository driverRepository, GeoService geoService,
+                       RideEventPublisher rideEventPublisher) {
         this.rideRepository = rideRepository;
         this.userRepository = userRepository;
         this.driverRepository = driverRepository;
         this.geoService = geoService;
+        this.rideEventPublisher = rideEventPublisher;
     }
 
     public List<FareEstimate> estimate(double pickupLat, double pickupLng, double dropLat, double dropLng) {
@@ -57,7 +64,9 @@ public class RideService {
         ride.setVehicleType(request.vehicleType());
         ride.setFare(fare(request.vehicleType(), distance));
 
-        return rideRepository.save(ride);
+        Ride saved = rideRepository.save(ride);
+        rideEventPublisher.rideChanged(saved);
+        return saved;
     }
 
     @Transactional
@@ -68,6 +77,10 @@ public class RideService {
         }
         DriverProfile driver = driverRepository.findById(driverId)
                 .orElseThrow(() -> new IllegalArgumentException("Driver not found"));
+        driver.refreshDutyDay();
+        if (driver.currentDutyMinutes() >= DriverProfile.OVERTIME_DAILY_MINUTES) {
+            throw new IllegalStateException("Driver has reached the daily driving limit of 10 hours.");
+        }
         if (!driver.isAvailable()) {
             throw new IllegalStateException("Driver is not available");
         }
@@ -80,7 +93,9 @@ public class RideService {
         ride.setStartOtp(String.valueOf(1000 + random.nextInt(9000)));
         driver.setAvailable(false);
         driverRepository.save(driver);
-        return rideRepository.save(ride);
+        Ride saved = rideRepository.save(ride);
+        rideEventPublisher.rideChanged(saved);
+        return saved;
     }
 
     @Transactional
@@ -94,7 +109,10 @@ public class RideService {
         }
         ride.setStatus(RideStatus.IN_PROGRESS);
         ride.setProgressPercent(8);
-        return rideRepository.save(ride);
+        ride.setStartedAt(LocalDateTime.now());
+        Ride saved = rideRepository.save(ride);
+        rideEventPublisher.rideChanged(saved);
+        return saved;
     }
 
     @Transactional
@@ -105,18 +123,11 @@ public class RideService {
         }
         ride.setProgressPercent(Math.min(100, ride.getProgressPercent() + 14));
         if (ride.getProgressPercent() >= 100) {
-            ride.setProgressPercent(100);
-            ride.setStatus(RideStatus.COMPLETED);
-            ride.setCompletedAt(LocalDateTime.now());
-            if (ride.getDriver() != null) {
-                DriverProfile driver = ride.getDriver();
-                driver.refreshDutyDay();
-                driver.setLatitude(ride.getDropLat());
-                driver.setLongitude(ride.getDropLng());
-                driverRepository.save(driver);
-            }
+            finishRide(ride);
         }
-        return rideRepository.save(ride);
+        Ride saved = rideRepository.save(ride);
+        rideEventPublisher.rideChanged(saved);
+        return saved;
     }
 
     @Transactional
@@ -125,18 +136,10 @@ public class RideService {
         if (ride.getStatus() != RideStatus.IN_PROGRESS) {
             throw new IllegalStateException("Ride must be in progress before completion");
         }
-        ride.setStatus(RideStatus.COMPLETED);
-        ride.setProgressPercent(100);
-        ride.setCompletedAt(LocalDateTime.now());
-        if (ride.getDriver() != null) {
-            DriverProfile driver = ride.getDriver();
-            driver.refreshDutyDay();
-            driver.setCompletedTrips(driver.getCompletedTrips() + 1);
-            driver.setLatitude(ride.getDropLat());
-            driver.setLongitude(ride.getDropLng());
-            driverRepository.save(driver);
-        }
-        return rideRepository.save(ride);
+        finishRide(ride);
+        Ride saved = rideRepository.save(ride);
+        rideEventPublisher.rideChanged(saved);
+        return saved;
     }
 
     @Transactional
@@ -153,11 +156,16 @@ public class RideService {
         if (ride.getDriver() != null) {
             DriverProfile driver = ride.getDriver();
             driver.refreshDutyDay();
-            driver.setAvailable(driver.isOnDuty());
-            driver.setCompletedTrips(driver.getCompletedTrips() + 1);
+            if (driver.currentDutyMinutes() >= DriverProfile.OVERTIME_DAILY_MINUTES) {
+                driver.stopDuty();
+            } else {
+                driver.setAvailable(driver.isOnDuty());
+            }
             driverRepository.save(driver);
         }
-        return rideRepository.save(ride);
+        Ride saved = rideRepository.save(ride);
+        rideEventPublisher.rideChanged(saved);
+        return saved;
     }
 
     @Transactional
@@ -168,10 +176,18 @@ public class RideService {
         }
         ride.setStatus(RideStatus.CANCELLED);
         if (ride.getDriver() != null) {
-            ride.getDriver().setAvailable(true);
-            driverRepository.save(ride.getDriver());
+            DriverProfile driver = ride.getDriver();
+            driver.refreshDutyDay();
+            if (driver.currentDutyMinutes() < DriverProfile.OVERTIME_DAILY_MINUTES && driver.isOnDuty()) {
+                driver.setAvailable(true);
+            } else {
+                driver.setAvailable(false);
+            }
+            driverRepository.save(driver);
         }
-        return rideRepository.save(ride);
+        Ride saved = rideRepository.save(ride);
+        rideEventPublisher.rideChanged(saved);
+        return saved;
     }
 
     @Transactional
@@ -199,7 +215,9 @@ public class RideService {
             userRepository.save(user);
             driverRepository.save(driver);
         }
-        return rideRepository.save(ride);
+        Ride saved = rideRepository.save(ride);
+        rideEventPublisher.rideChanged(saved);
+        return saved;
     }
 
     public Ride getRide(Long id) {
@@ -223,14 +241,97 @@ public class RideService {
         return rideRepository.findByDriverIdOrderByRequestedAtDesc(driverId);
     }
 
+    public long driverRideMinutesToday(Long driverId) {
+        return driverRepository.findById(driverId)
+                .map(DriverProfile::currentDutyMinutes)
+                .orElse(0L);
+    }
+
+    public String rideHoursStatus(long minutes) {
+        if (minutes >= DriverProfile.OVERTIME_DAILY_MINUTES) {
+            return "OVERTIME";
+        }
+        if (minutes >= DriverProfile.SAFE_DAILY_MINUTES) {
+            return "NEEDS_REST";
+        }
+        return "SAFE";
+    }
+
     public List<Ride> pendingForDriver(Long driverId) {
         DriverProfile driver = driverRepository.findById(driverId)
                 .orElseThrow(() -> new IllegalArgumentException("Driver not found"));
-        return rideRepository.findByStatusAndVehicleTypeOrderByRequestedAtDesc(RideStatus.REQUESTED, driver.getVehicleType());
+        return rideRepository.findByStatusAndVehicleTypeOrderByRequestedAtDesc(RideStatus.REQUESTED, driver.getVehicleType()).stream()
+                .sorted(Comparator
+                        .comparingDouble((Ride ride) -> geoService.distanceKm(
+                                driver.getLatitude(), driver.getLongitude(), ride.getPickupLat(), ride.getPickupLng()))
+                        .thenComparing(Ride::getRequestedAt))
+                .toList();
     }
 
     private double fare(VehicleType type, double distance) {
         return round(type.getBaseFare() + (distance * type.getPerKmFare()) + 18);
+    }
+
+    private void finishRide(Ride ride) {
+        LocalDateTime completedAt = LocalDateTime.now();
+        ride.setStatus(RideStatus.COMPLETED);
+        ride.setProgressPercent(100);
+        ride.setCompletedAt(completedAt);
+        if (ride.getStartedAt() == null) {
+            ride.setStartedAt(ride.getRequestedAt() == null ? completedAt : ride.getRequestedAt());
+        }
+        long rideMinutes = rideMinutes(ride.getStartedAt(), completedAt);
+        if (ride.getDistanceKm() > 0.0) {
+            rideMinutes = Math.max(rideMinutes, (long) etaMinutes(ride.getDistanceKm()));
+        }
+        ride.setDurationMinutes(rideMinutes);
+        if (ride.getDriver() != null) {
+            DriverProfile driver = ride.getDriver();
+            driver.addCompletedRideMinutes(rideMinutes, completedAt.toLocalDate());
+            driver.setCompletedTrips(driver.getCompletedTrips() + 1);
+            driver.setLatitude(ride.getDropLat());
+            driver.setLongitude(ride.getDropLng());
+            if (driver.currentDutyMinutes() >= DriverProfile.OVERTIME_DAILY_MINUTES) {
+                driver.stopDuty();
+            }
+            driverRepository.save(driver);
+        }
+    }
+
+    private long rideMinutes(LocalDateTime startedAt, LocalDateTime completedAt) {
+        long seconds = Math.max(0, Duration.between(startedAt, completedAt).toSeconds());
+        return Math.max(1, (seconds + 59) / 60);
+    }
+
+    private long completedRideMinutes(Ride ride) {
+        if (ride.getDurationMinutes() != null && ride.getDurationMinutes() > 0) {
+            return ride.getDurationMinutes();
+        }
+        LocalDateTime finishedAt = rideFinishedAt(ride);
+        if (finishedAt == null && ride.getStatus() == RideStatus.COMPLETED) {
+            finishedAt = LocalDateTime.now();
+        }
+        if (finishedAt == null) return 0;
+        LocalDateTime startedAt = ride.getStartedAt() == null ? ride.getRequestedAt() : ride.getStartedAt();
+        return startedAt == null ? 0 : rideMinutes(startedAt, finishedAt);
+    }
+
+    private boolean happenedOn(Ride ride, LocalDate date) {
+        return isSameDate(ride.getCompletedAt(), date)
+                || isSameDate(ride.getPaidAt(), date)
+                || isSameDate(ride.getStartedAt(), date)
+                || isSameDate(ride.getRequestedAt(), date);
+    }
+
+    private boolean isSameDate(LocalDateTime value, LocalDate date) {
+        return value != null && value.toLocalDate().equals(date);
+    }
+
+    private LocalDateTime rideFinishedAt(Ride ride) {
+        if (ride.getCompletedAt() != null) {
+            return ride.getCompletedAt();
+        }
+        return ride.getPaidAt();
     }
 
     private int etaMinutes(double distance) {

@@ -1,5 +1,6 @@
 const h = React.createElement;
 const { useEffect, useMemo, useRef, useState } = React;
+let sessionToken = "";
 
 const defaultPickup = { name: "MG Road, Bengaluru", lat: 12.9758, lng: 77.6050 };
 const defaultDrop = { name: "Indiranagar, Bengaluru", lat: 12.9719, lng: 77.6412 };
@@ -32,9 +33,13 @@ function cx(...parts) {
 }
 
 async function api(path, options = {}) {
+    const headers = { "Content-Type": "application/json", ...(options.headers || {}) };
+    if (sessionToken) {
+        headers.Authorization = `Bearer ${sessionToken}`;
+    }
     const response = await fetch(path, {
-        headers: { "Content-Type": "application/json" },
-        ...options
+        ...options,
+        headers
     });
     if (!response.ok) {
         const error = await response.json().catch(() => ({ message: "Request failed" }));
@@ -58,6 +63,7 @@ async function searchPlaces(query) {
 
 function formatWorkMinutes(minutes = 0) {
     const safeMinutes = Math.max(0, Number(minutes) || 0);
+    if (safeMinutes < 60) return `${safeMinutes} min`;
     return `${Math.floor(safeMinutes / 60)}h ${String(safeMinutes % 60).padStart(2, "0")}m`;
 }
 
@@ -110,6 +116,23 @@ function Stars({ rating = 0 }) {
 
 function SafetyBadge({ status = "UNKNOWN" }) {
     return h("span", { className: cx("safety-badge", status) }, workStatusLabel(status));
+}
+
+function SafetyWarning({ status = "UNKNOWN", audience = "driver" }) {
+    if (!["NEEDS_REST", "OVERTIME"].includes(status)) return null;
+    const messages = {
+        NEEDS_REST: audience === "rider"
+            ? ["Driver rest advised", "This driver has crossed the safe daily ride-hour limit. Please stay alert and confirm they are fit to continue."]
+            : ["Rest advised", "You have crossed the safe daily ride-hour limit. Complete the current trip, go offline, and rest before accepting more rides."],
+        OVERTIME: audience === "rider"
+            ? ["Overtime risk", "This driver has reached the overtime ride-hour limit today. Consider choosing another driver before starting a new trip."]
+            : ["Overtime risk", "Your ride hours have reached the overtime limit today. Go offline and rest before taking another trip."]
+    };
+    const [title, text] = messages[status];
+    return h("div", { className: "warning-banner", "data-safety-status": status, role: "alert" },
+        h("strong", null, title),
+        h("span", null, text)
+    );
 }
 
 function Topbar({ user, view, onLogout }) {
@@ -490,6 +513,11 @@ function DriverCard({ driver }) {
             h("span", null, `${formatWorkMinutes(driver.workMinutesToday)} today`),
             h(SafetyBadge, { status: driver.workStatus })
         ),
+        driver.pickupDistanceKm !== undefined ? h("div", { className: "match-row" },
+            h("span", null, `${driver.pickupDistanceKm} km from pickup`),
+            h("span", null, `${driver.etaToPickupMinutes} min arrival`),
+            h("span", null, `Match ${driver.matchScore}`)
+        ) : null,
         h("span", { className: "subtle" }, `${driver.seats} seats | Trips ${driver.trips}`)
     );
 }
@@ -553,9 +581,11 @@ function RiderRideCard({ ride, paymentMethod, setPaymentMethod, onPay, onCancel,
                 h("span", null, h("strong", null, ride.driverName), ` | ${ride.vehicle} | ${ride.driverPhone}`),
                 h("span", null,
                     h(Stars, { rating: ride.driverRating }),
-                    ` ${Number(ride.driverRating).toFixed(1)} | Worked ${formatWorkMinutes(ride.driverWorkMinutesToday)} today `,
+                    ` ${Number(ride.driverRating).toFixed(1)} | Ride hours ${formatWorkMinutes(ride.driverWorkMinutesToday)} today `,
                     h(SafetyBadge, { status: ride.driverWorkStatus })
-                )
+                ),
+                ride.durationMinutes ? h("span", null, `This trip duration: ${formatWorkMinutes(ride.durationMinutes)}`) : null,
+                h(SafetyWarning, { status: ride.driverWorkStatus, audience: "rider" })
             ),
         ride.status === "REQUESTED" ? h("div", { className: "waiting-card" },
             h("span", { className: "spinner" }),
@@ -574,7 +604,7 @@ function RiderDashboard(props) {
         pickupAddress, setPickupAddress, dropAddress, setDropAddress, pickup, drop,
         setPickup, setDrop, estimates, vehicleType, setVehicleType, availableDrivers,
         latestRide, status, loadEstimates, requestRide, refreshRider, paymentMethod,
-        setPaymentMethod, payRide, cancelRide, rateRide
+        setPaymentMethod, payRide, cancelRide, rateRide, liveStatus
     } = props;
     const selectedEstimate = estimates.find(estimate => estimate.vehicleType === vehicleType);
 
@@ -583,7 +613,8 @@ function RiderDashboard(props) {
             items: [
                 { label: "Total bookings", value: props.ridesCount },
                 { label: "Current trip", value: latestRide?.status || "Idle" },
-                { label: "Selected vehicle", value: selectedEstimate?.label || "Cab" }
+                { label: "Selected vehicle", value: selectedEstimate?.label || "Cab" },
+                { label: "Realtime", value: liveStatus }
             ]
         }),
         h(RideNotice, { ride: latestRide }),
@@ -677,7 +708,7 @@ function DriverSafetyPanel({ driver, onToggle }) {
         ),
         h("div", { className: "duty-stats" },
             [
-                ["Worked today", formatWorkMinutes(minutes)],
+                ["Ride hours today", formatWorkMinutes(minutes)],
                 ["Safe limit", formatWorkMinutes(safeLimit)],
                 ["Overtime limit", formatWorkMinutes(overtimeLimit)],
                 ["Trips completed", driver?.trips || 0]
@@ -704,7 +735,7 @@ function DriverRequestCard({ ride, onAccept }) {
     );
 }
 
-function DriverTripCard({ ride, onStart, onProgress }) {
+function DriverTripCard({ ride, onStart, onProgress, onComplete }) {
     const [otp, setOtp] = useState("");
     return h("article", { className: "ride-card" },
         h("div", { className: "ride-head" },
@@ -722,13 +753,17 @@ function DriverTripCard({ ride, onStart, onProgress }) {
             }),
             h("button", { className: "primary", onClick: () => onStart(ride.id, otp) }, "Verify & Start")
         ) : null,
-        ride.status === "IN_PROGRESS" ? h("button", { className: "primary", onClick: () => onProgress(ride.id) }, "Update Live Tracking") : null,
+        ride.status === "IN_PROGRESS" ? h("div", { className: "actions" },
+            h("button", { className: "primary", onClick: () => onProgress(ride.id) }, "Update Live Tracking"),
+            h("button", { onClick: () => onComplete(ride.id) }, "Complete Ride")
+        ) : null,
+        ride.durationMinutes ? h("span", { className: "subtle" }, `Trip duration: ${formatWorkMinutes(ride.durationMinutes)}`) : null,
         ride.status === "COMPLETED" && !ride.paid ? h("span", { className: "subtle" }, `Waiting for user payment of Rs ${ride.fare}`) : null,
         ride.status === "COMPLETED" && ride.paid ? h("span", { className: "subtle" }, `Paid by ${ride.paymentMethod || "UPI"} | ${ride.paymentReference || "Receipt generated"}`) : null
     );
 }
 
-function DriverDashboard({ driver, requests, trips, refreshDriver, acceptRide, startRide, progressRide, toggleDriverDuty, driverMessage }) {
+function DriverDashboard({ driver, requests, trips, refreshDriver, acceptRide, startRide, progressRide, completeRide, toggleDriverDuty, driverMessage, liveStatus }) {
     const active = trips.find(ride => ["ACCEPTED", "IN_PROGRESS", "COMPLETED"].includes(ride.status));
 
     return h("section", { className: "app-grid" },
@@ -736,11 +771,13 @@ function DriverDashboard({ driver, requests, trips, refreshDriver, acceptRide, s
             items: [
                 { label: "New requests", value: requests.length },
                 { label: "Assigned trips", value: trips.length },
-                { label: "Worked today", value: formatWorkMinutes(driver?.workMinutesToday || 0) },
-                { label: "Availability", value: driver?.onDuty ? "On duty" : "Offline" }
+                { label: "Ride hours today", value: formatWorkMinutes(driver?.workMinutesToday || 0) },
+                { label: "Availability", value: driver?.onDuty ? "On duty" : "Offline" },
+                { label: "Realtime", value: liveStatus }
             ]
         }),
         h(DriverSafetyPanel, { driver, onToggle: toggleDriverDuty }),
+        h(SafetyWarning, { status: driver?.workStatus, audience: "driver" }),
         driverMessage ? h("div", { className: "status-banner", role: "status" },
             h("div", { className: "status-icon" }),
             h("div", null, h("strong", null, "Driver update"), h("span", null, driverMessage))
@@ -767,7 +804,7 @@ function DriverDashboard({ driver, requests, trips, refreshDriver, acceptRide, s
             SectionTitle({ title: "Accepted Trips" }),
             h("div", { className: "ride-list" },
                 trips.length
-                    ? trips.map(ride => h(DriverTripCard, { key: ride.id, ride, onStart: startRide, onProgress: progressRide }))
+                    ? trips.map(ride => h(DriverTripCard, { key: ride.id, ride, onStart: startRide, onProgress: progressRide, onComplete: completeRide }))
                     : h("p", { className: "subtle" }, "Accepted trips will appear here.")
             )
         )
@@ -794,6 +831,7 @@ function App() {
     const [driverRequests, setDriverRequests] = useState([]);
     const [driverTrips, setDriverTrips] = useState([]);
     const [driverMessage, setDriverMessage] = useState("");
+    const [liveStatus, setLiveStatus] = useState("Live updates standby");
 
     async function submitAuth(form) {
         setAuthMessage("");
@@ -811,7 +849,9 @@ function App() {
                 method: "POST",
                 body: JSON.stringify(payload)
             });
+            sessionToken = loggedIn.token || "";
             setUser(loggedIn);
+            setLiveStatus("Connecting live updates...");
         } catch (error) {
             setAuthMessage(error.message);
         }
@@ -852,7 +892,12 @@ function App() {
     }
 
     async function loadAvailableDrivers(type = vehicleType) {
-        const drivers = await api(`/api/drivers/available?vehicleType=${type}`);
+        const query = new URLSearchParams({
+            vehicleType: type,
+            pickupLat: pickup.lat,
+            pickupLng: pickup.lng
+        });
+        const drivers = await api(`/api/drivers/available?${query}`);
         setAvailableDrivers(drivers);
     }
 
@@ -937,6 +982,11 @@ function App() {
         await refreshDriver();
     }
 
+    async function completeRide(id) {
+        await api(`/api/rides/${id}/complete`, { method: "PATCH", body: "{}" });
+        await refreshDriver();
+    }
+
     async function payRide(id) {
         await api(`/api/rides/${id}/pay`, {
             method: "PATCH",
@@ -980,6 +1030,36 @@ function App() {
     }, [user]);
 
     useEffect(() => {
+        if (!user || !sessionToken) return;
+        const protocol = window.location.protocol === "https:" ? "wss" : "ws";
+        const socket = new WebSocket(`${protocol}://${window.location.host}/ws/rides?token=${encodeURIComponent(sessionToken)}`);
+        socket.addEventListener("open", () => {
+            setLiveStatus("Live updates connected");
+            socket.send(JSON.stringify({ type: "PING" }));
+        });
+        socket.addEventListener("message", event => {
+            const payload = JSON.parse(event.data);
+            if (payload.type === "CONNECTED") {
+                setLiveStatus(payload.message);
+                return;
+            }
+            if (payload.type === "RIDE_UPDATED" || payload.type === "DRIVER_UPDATED") {
+                setLiveStatus("Live update received");
+                if (user.role === "RIDER") {
+                    refreshRider();
+                    loadAvailableDrivers(vehicleType);
+                }
+                if (user.role === "DRIVER") {
+                    refreshDriver();
+                }
+            }
+        });
+        socket.addEventListener("close", () => setLiveStatus("Live updates reconnect on refresh"));
+        socket.addEventListener("error", () => setLiveStatus("Live updates unavailable"));
+        return () => socket.close();
+    }, [user]);
+
+    useEffect(() => {
         if (!user) return;
         const timer = setInterval(() => {
             if (user.role === "RIDER") refreshRider();
@@ -999,11 +1079,12 @@ function App() {
                 pickup, drop, setPickup, setDrop, estimates, vehicleType, setVehicleType,
                 availableDrivers, latestRide, status: riderStatus, loadEstimates, requestRide,
                 refreshRider, paymentMethod, setPaymentMethod, payRide, cancelRide, rateRide,
-                ridesCount
+                ridesCount,
+                liveStatus
             }) : null,
             user?.role === "DRIVER" ? h(DriverDashboard, {
                 driver, requests: driverRequests, trips: driverTrips, refreshDriver,
-                acceptRide, startRide, progressRide, toggleDriverDuty, driverMessage
+                acceptRide, startRide, progressRide, completeRide, toggleDriverDuty, driverMessage, liveStatus
             }) : null
         )
     );

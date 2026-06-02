@@ -618,6 +618,33 @@ select:focus {
     font-weight: 720;
 }
 
+.warning-banner {
+    display: grid;
+    gap: 4px;
+    padding: 14px 16px;
+    border: 1px solid #f0d285;
+    border-radius: 8px;
+    background: #fff8e6;
+    color: #614500;
+    box-shadow: var(--soft-shadow);
+}
+
+.warning-banner[data-safety-status="OVERTIME"] {
+    border-color: #f1a8b1;
+    background: #fff0f2;
+    color: #8d1b28;
+}
+
+.warning-banner strong,
+.warning-banner span {
+    display: block;
+}
+
+.warning-banner span {
+    color: inherit;
+    font-weight: 760;
+}
+
 .status-icon,
 .spinner {
     width: 20px;
@@ -710,6 +737,21 @@ select:focus {
     color: #33424c;
     font-weight: 820;
     font-size: 0.9rem;
+}
+
+.match-row {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.match-row span {
+    padding: 6px 9px;
+    border-radius: 999px;
+    background: #eef6f1;
+    color: #075f45;
+    font-size: 0.8rem;
+    font-weight: 850;
 }
 
 .stars {

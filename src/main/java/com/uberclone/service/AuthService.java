@@ -16,10 +16,12 @@ import org.springframework.transaction.annotation.Transactional;
 public class AuthService {
     private final AppUserRepository userRepository;
     private final DriverProfileRepository driverRepository;
+    private final TokenService tokenService;
 
-    public AuthService(AppUserRepository userRepository, DriverProfileRepository driverRepository) {
+    public AuthService(AppUserRepository userRepository, DriverProfileRepository driverRepository, TokenService tokenService) {
         this.userRepository = userRepository;
         this.driverRepository = driverRepository;
+        this.tokenService = tokenService;
     }
 
     @Transactional
@@ -44,7 +46,7 @@ public class AuthService {
             ));
             driverId = driver.getId();
         }
-        return UserResponse.from(user, driverId);
+        return UserResponse.from(user, driverId, tokenService.createToken(user));
     }
 
     @Transactional
@@ -58,13 +60,18 @@ public class AuthService {
         if (request.role() == Role.DRIVER) {
             DriverProfile driver = driverRepository.findByUserId(user.getId()).orElse(null);
             if (driver != null) {
-                driver.startDuty();
-                driver.setAvailable(true);
+                driver.refreshDutyDay();
+                if (driver.currentDutyMinutes() >= DriverProfile.OVERTIME_DAILY_MINUTES) {
+                    driver.stopDuty();
+                } else {
+                    driver.startDuty();
+                    driver.setAvailable(true);
+                }
                 driverRepository.save(driver);
                 driverId = driver.getId();
             }
         }
-        return UserResponse.from(user, driverId);
+        return UserResponse.from(user, driverId, tokenService.createToken(user));
     }
 
     private String valueOrDefault(String value, String fallback) {

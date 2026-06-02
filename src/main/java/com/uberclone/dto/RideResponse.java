@@ -1,7 +1,10 @@
 package com.uberclone.dto;
 
 import com.uberclone.model.Ride;
+import com.uberclone.model.RideStatus;
 
+import java.time.Duration;
+import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 
 public record RideResponse(
@@ -24,6 +27,7 @@ public record RideResponse(
         String otp,
         Integer riderRating,
         double driverRating,
+        long durationMinutes,
         long driverWorkMinutesToday,
         String driverWorkStatus,
         boolean driverOnDuty,
@@ -35,6 +39,15 @@ public record RideResponse(
         String requestedAt
 ) {
     public static RideResponse from(Ride ride) {
+        var driver = ride.getDriver();
+        return from(
+                ride,
+                driver == null ? 0 : driver.currentDutyMinutes(),
+                driver == null ? "UNKNOWN" : driver.dutyStatus()
+        );
+    }
+
+    public static RideResponse from(Ride ride, long driverWorkMinutesToday, String driverWorkStatus) {
         var driver = ride.getDriver();
         return new RideResponse(
                 ride.getId(),
@@ -56,8 +69,9 @@ public record RideResponse(
                 ride.getStartOtp(),
                 ride.getRiderRating(),
                 driver == null ? 0 : round(driver.getUser().getRating()),
-                driver == null ? 0 : driver.currentDutyMinutes(),
-                driver == null ? "UNKNOWN" : driver.dutyStatus(),
+                responseDurationMinutes(ride),
+                driver == null ? 0 : driverWorkMinutesToday,
+                driver == null ? "UNKNOWN" : driverWorkStatus,
                 driver != null && driver.isOnDuty(),
                 ride.getProgressPercent(),
                 ride.getPickupLat(),
@@ -70,5 +84,21 @@ public record RideResponse(
 
     private static double round(double value) {
         return Math.round(value * 100.0) / 100.0;
+    }
+
+    private static long responseDurationMinutes(Ride ride) {
+        if (ride.getDurationMinutes() != null && ride.getDurationMinutes() > 0) {
+            return ride.getDurationMinutes();
+        }
+        LocalDateTime finishedAt = ride.getCompletedAt() == null ? ride.getPaidAt() : ride.getCompletedAt();
+        if (finishedAt == null && ride.getStatus() == RideStatus.COMPLETED) {
+            finishedAt = LocalDateTime.now();
+        }
+        LocalDateTime startedAt = ride.getStartedAt() == null ? ride.getRequestedAt() : ride.getStartedAt();
+        if (startedAt == null || finishedAt == null) {
+            return 0;
+        }
+        long seconds = Math.max(0, Duration.between(startedAt, finishedAt).toSeconds());
+        return Math.max(1, (seconds + 59) / 60);
     }
 }
