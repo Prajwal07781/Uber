@@ -14,8 +14,8 @@ const paymentMethods = [
 
 const featureCards = [
     { title: "Ride", text: "Book pickup and drop locations, compare fares, and track the assigned driver.", image: "/img/feature-ride.svg" },
-    { title: "Reserve", text: "Estimate fare, distance, and ETA before the ride request goes live.", image: "/img/feature-reserve.svg" },
-    { title: "Intercity", text: "Search Indian locations and draw live pickup-to-destination routes.", image: "/img/feature-intercity.svg" },
+    { title: "Reserve", text: "Preview fare, distance, and ETA before the ride request goes live.", image: "/img/feature-reserve.svg" },
+    { title: "Intercity", text: "Search Indian locations and draw pickup-to-destination routes on a real map.", image: "/img/feature-intercity.svg" },
     { title: "Payments", text: "Close the trip with UPI, card, wallet, or cash and generate a receipt.", image: "/img/feature-payment.svg" },
     { title: "Driver Hours", text: "Track duty time, safe limits, rest advice, and overtime risk.", image: "/img/feature-hours.svg" },
     { title: "Ratings", text: "Capture rider feedback and keep trust visible across driver cards.", image: "/img/feature-rating.svg" }
@@ -109,8 +109,10 @@ function SectionTitle({ title, meta, action }) {
 
 function Stars({ rating = 0 }) {
     const rounded = Math.round(Number(rating) || 0);
+    const filled = String.fromCharCode(9733);
+    const empty = String.fromCharCode(9734);
     return h("span", { className: "stars", "aria-label": `${rating} out of 5` },
-        [1, 2, 3, 4, 5].map(star => star <= rounded ? "★" : "☆").join("")
+        [1, 2, 3, 4, 5].map(star => star <= rounded ? filled : empty).join("")
     );
 }
 
@@ -186,6 +188,11 @@ function AuthView({ role, setRole, authMode, setAuthMode, onSubmit, message }) {
                 h("h1", null, "A sharper Uber clone for booking, driving, and dispatch."),
                 h("p", { className: "hero-copy" },
                     "Live maps, fare estimates, vehicle matching, OTP starts, driver hour safety, payments, and ratings are now composed as a modern React frontend."
+                ),
+                h("div", { className: "hero-metrics", "aria-label": "Application highlights" },
+                    h("span", null, h("strong", null, "Realtime"), h("small", null, "WebSocket ride updates")),
+                    h("span", null, h("strong", null, "4 modes"), h("small", null, "Bike, Auto, Cab, SUV")),
+                    h("span", null, h("strong", null, "Live map"), h("small", null, "Leaflet route tracking"))
                 ),
                 h("div", { className: "role-tabs" },
                     ["RIDER", "DRIVER"].map(item => h("button", {
@@ -562,7 +569,7 @@ function RatingControl({ ride, onRate }) {
                 type: "button",
                 title: `${star} star${star > 1 ? "s" : ""}`,
                 onClick: () => onRate(ride.id, star)
-            }, "★"))
+            }, String.fromCharCode(9733)))
         )
     );
 }
