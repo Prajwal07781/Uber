@@ -140,15 +140,15 @@ function SafetyWarning({ status = "UNKNOWN", audience = "driver" }) {
 function Topbar({ user, view, onLogout }) {
     return h("header", { className: "topbar" },
         h("a", { className: "brand-lockup", href: "#" },
-            h("span", { className: "brand-mark" }, "Uber"),
+            h("span", { className: "brand-mark" }, "Smart Ride"),
             h("span", { className: "brand-copy" },
-                h("span", null, "Java full stack"),
-                h("strong", null, user ? `${user.role === "RIDER" ? "Rider" : "Driver"} dashboard` : "React experience")
+                h("span", null, "Fast & Affordable"),
+                h("strong", null, user ? `${user.role === "RIDER" ? "Rider" : "Driver"} dashboard` : "Safe & Reliable")
             )
         ),
         !user ? h("nav", { className: "top-nav", "aria-label": "Main navigation" },
-            h("a", { href: "#product" }, "Product"),
-            h("a", { href: "#payments" }, "Payments"),
+            h("a", { href: "#usages" }, "Usages"),
+            h("a", { href: "#offers" }, "Offers"),
             h("a", { href: "#safety" }, "Safety")
         ) : null,
         h("div", { className: "top-actions" },
@@ -168,6 +168,15 @@ function AuthView({ role, setRole, authMode, setAuthMode, onSubmit, message }) {
         vehicleType: "CAB"
     });
 
+    const [activeSafetyTab, setActiveSafetyTab] = useState("otp");
+    const [copiedCode, setCopiedCode] = useState(null);
+
+    function copyPromoCode(code) {
+        navigator.clipboard.writeText(code);
+        setCopiedCode(code);
+        setTimeout(() => setCopiedCode(null), 2500);
+    }
+
     useEffect(() => {
         setForm(current => ({ ...current, phone: role === "RIDER" ? "9000000001" : "9000000101" }));
     }, [role]);
@@ -184,27 +193,32 @@ function AuthView({ role, setRole, authMode, setAuthMode, onSubmit, message }) {
     return h("section", { className: "auth-layout" },
         h("div", { className: "hero" },
             h("div", { className: "hero-content" },
-                h("p", { className: "eyebrow" }, "React powered cab platform"),
-                h("h1", null, "A sharper Uber clone for booking, driving, and dispatch."),
+                h("p", { className: "eyebrow" }, "Smart Ride Platform"),
+                h("h1", null, "Your ride, on demand. Easy and reliable."),
                 h("p", { className: "hero-copy" },
-                    "Live maps, fare estimates, vehicle matching, OTP starts, driver hour safety, payments, and ratings are now composed as a modern React frontend."
+                    "Track your driver in real-time on active maps, verify every trip with safe OTP starts, pay digitally or in cash, and experience secure travel with verified professional drivers."
                 ),
                 h("div", { className: "hero-metrics", "aria-label": "Application highlights" },
-                    h("span", null, h("strong", null, "Realtime"), h("small", null, "WebSocket ride updates")),
+                    h("span", null, h("strong", null, "Realtime"), h("small", null, "Live map tracking")),
                     h("span", null, h("strong", null, "4 modes"), h("small", null, "Bike, Auto, Cab, SUV")),
-                    h("span", null, h("strong", null, "Live map"), h("small", null, "Leaflet route tracking"))
-                ),
-                h("div", { className: "role-tabs" },
-                    ["RIDER", "DRIVER"].map(item => h("button", {
-                        key: item,
-                        className: cx("role-tab", role === item && "active"),
-                        onClick: () => setRole(item),
-                        type: "button"
-                    }, item === "RIDER" ? "User" : "Driver"))
+                    h("span", null, h("strong", null, "Secure"), h("small", null, "OTP verified trips"))
                 )
             )
         ),
         h("aside", { className: "panel auth-card" },
+            h("div", { className: "segmented-control" },
+                h("span", { className: cx("segmented-slider", role.toLowerCase()) }),
+                h("button", {
+                    className: cx("segment-btn", role === "RIDER" && "active"),
+                    onClick: () => setRole("RIDER"),
+                    type: "button"
+                }, "User"),
+                h("button", {
+                    className: cx("segment-btn", role === "DRIVER" && "active"),
+                    onClick: () => setRole("DRIVER"),
+                    type: "button"
+                }, "Driver")
+            ),
             SectionTitle({
                 title: `${role === "RIDER" ? "User" : "Driver"} ${authMode === "login" ? "Login" : "Signup"}`,
                 meta: authMode === "login" ? "Use seeded demo accounts" : "Create a profile",
@@ -274,32 +288,148 @@ function AuthView({ role, setRole, authMode, setAuthMode, onSubmit, message }) {
                 h("p", { className: "message", role: "status" }, message)
             )
         ),
-        h("section", { className: "feature-showcase", id: "product" },
-            h("div", { className: "feature-heading" },
-                h("div", null,
-                    h("span", { className: "section-kicker" }, "Platform modules"),
-                    h("h2", null, "Built like a real mobility product.")
-                ),
-                h("p", null, "The interface keeps operational dashboards dense and clear while the booking flow still feels premium.")
+        h("section", { className: "usages-section", id: "usages" },
+            h("div", { className: "section-header-center" },
+                h("span", { className: "section-kicker" }, "Services"),
+                h("h2", null, "Designed for every journey")
             ),
-            h("div", { className: "feature-grid" },
-                featureCards.map((feature, index) => h("article", {
-                    key: feature.title,
-                    className: "feature-card",
-                    id: index === 3 ? "payments" : index === 4 ? "safety" : undefined
-                },
-                    h("div", null, h("h3", null, feature.title), h("p", null, feature.text)),
-                    h("img", { src: feature.image, alt: `${feature.title} illustration` })
+            h("div", { className: "usages-grid" },
+                [
+                    { title: "Commutes", desc: "Daily travel made simple. Reach your destination on time.", icon: "🚗" },
+                    { title: "Airport transfers", desc: "Reliable pickups with extra room for luggage.", icon: "✈️" },
+                    { title: "Intercity travel", desc: "Comfortable highway cruising for outstation trips.", icon: "🛣️" },
+                    { title: "Safe nights out", desc: "Verified drivers and OTP security for late-night travel.", icon: "🌙" }
+                ].map(item => h("article", { key: item.title, className: "usage-card" },
+                    h("div", { className: "usage-icon" }, item.icon),
+                    h("h3", null, item.title),
+                    h("p", null, item.desc)
                 ))
             )
         ),
-        h("section", { className: "landing-band" },
-            h("div", null,
-                h("span", { className: "section-kicker" }, "Stack"),
-                h("h2", null, "React frontend. Spring Boot API. H2 persistence.")
+        h("section", { className: "offers-section", id: "offers" },
+            h("div", { className: "section-header-center" },
+                h("span", { className: "section-kicker" }, "Exclusive deals"),
+                h("h2", null, "Save on your next rides")
             ),
-            h("div", { className: "module-list" },
-                ["React UI", "Spring Boot", "Leaflet maps", "Driver matching", "OTP rides", "Payment receipt"].map(item => h("span", { key: item }, item))
+            h("div", { className: "offers-grid" },
+                [
+                    { title: "New Rider Discount", code: "GET20", desc: "Get 20% off your first ride. Save up to Rs. 100 instantly.", badge: "New User" },
+                    { title: "Referral Bonus", code: "REFER100", desc: "Earn Rs. 100 wallet balance when you invite a friend to ride.", badge: "Referrals" },
+                    { title: "Business Travelers", code: "BIZPASS", desc: "Get priority dispatch and 10% cashback on all office trips.", badge: "Business" }
+                ].map(promo => h("div", {
+                    key: promo.code,
+                    className: cx("promo-card", copiedCode === promo.code && "copied"),
+                    onClick: () => copyPromoCode(promo.code)
+                },
+                    h("div", { className: "promo-badge" }, promo.badge),
+                    h("h3", null, promo.title),
+                    h("p", null, promo.desc),
+                    h("div", { className: "promo-code-box" },
+                        h("span", { className: "promo-code" }, promo.code),
+                        h("span", { className: "promo-copy-btn" }, copiedCode === promo.code ? "✓ Copied" : "Copy Code")
+                    )
+                ))
+            )
+        ),
+        h("section", { className: "safety-highlight-section", id: "safety" },
+            h("div", { className: "section-header-center" },
+                h("span", { className: "section-kicker" }, "Safety First"),
+                h("h2", null, "Your security is our priority")
+            ),
+            h("div", { className: "safety-content" },
+                h("div", { className: "safety-sidebar" },
+                    [
+                        { id: "otp", title: "OTP Starts", desc: "Rides only start after you share the correct 4-digit code with the driver.", icon: "🔒" },
+                        { id: "limits", title: "Driver Safety Limits", desc: "We track and limit continuous driving hours to prevent fatigue.", icon: "⏳" },
+                        { id: "tracking", title: "Live Trip Tracking", desc: "Share your route in real-time with family or friends via active maps.", icon: "📍" }
+                    ].map(item => h("button", {
+                        key: item.id,
+                        className: cx("safety-tab-btn", activeSafetyTab === item.id && "active"),
+                        onClick: () => setActiveSafetyTab(item.id),
+                        type: "button"
+                    },
+                        h("span", { className: "safety-tab-icon" }, item.icon),
+                        h("span", { className: "safety-tab-text" },
+                            h("strong", null, item.title),
+                            h("span", null, item.desc)
+                        )
+                    ))
+                ),
+                h("div", { className: "safety-preview-panel" },
+                    activeSafetyTab === "otp" ? h("div", { className: "safety-mockup otp-mockup" },
+                        h("div", { className: "mockup-screen" },
+                            h("div", { className: "mockup-header" }, "Verify Ride"),
+                            h("div", { className: "mockup-body" },
+                                h("div", { className: "otp-shield" }, "✓"),
+                                h("h4", null, "Share OTP with Driver"),
+                                h("div", { className: "otp-display-code" }, "4 8 2 1"),
+                                h("p", null, "Rides start only when verified. Ensure you are boarding the correct vehicle.")
+                            )
+                        )
+                    ) : null,
+                    activeSafetyTab === "limits" ? h("div", { className: "safety-mockup limits-mockup" },
+                        h("div", { className: "mockup-screen" },
+                            h("div", { className: "mockup-header" }, "Safety Hours"),
+                            h("div", { className: "mockup-body" },
+                                h("div", { className: "meter-container" },
+                                    h("div", { className: "meter-dial" },
+                                        h("span", { className: "meter-value" }, "7h 45m"),
+                                        h("span", { className: "meter-sub" }, "Driven Today")
+                                    )
+                                ),
+                                h("div", { className: "safety-badge-mock NEEDS_REST" }, "Rest Advised"),
+                                h("p", null, "Driver duty shifts are strictly monitored and limited to keep trips 100% safe.")
+                            )
+                        )
+                    ) : null,
+                    activeSafetyTab === "tracking" ? h("div", { className: "safety-mockup tracking-mockup" },
+                        h("div", { className: "mockup-screen" },
+                            h("div", { className: "mockup-header" }, "Live Tracking"),
+                            h("div", { className: "mockup-body" },
+                                h("div", { className: "map-graphic" },
+                                    h("span", { className: "marker pickup" }, "P"),
+                                    h("span", { className: "route-line-graphic" }),
+                                    h("span", { className: "marker drop" }, "D"),
+                                    h("span", { className: "car-marker-graphic" }, "🚗")
+                                ),
+                                h("button", { className: "share-btn-mock", type: "button" }, "Share Trip Status"),
+                                h("p", null, "Share your active coordinates with loved ones in one click.")
+                            )
+                        )
+                    ) : null
+                )
+            )
+        ),
+        h("section", { className: "cta-dual-section" },
+            h("div", { className: "cta-card rider-cta" },
+                h("div", { className: "cta-content" },
+                    h("span", { className: "cta-kicker" }, "Ride with us"),
+                    h("h2", null, "Ready to get moving?"),
+                    h("p", null, "Sign up as a Rider to book affordable and comfortable rides instantly."),
+                    h("button", {
+                        className: "primary cta-btn",
+                        onClick: () => {
+                            setRole("RIDER");
+                            setAuthMode("signup");
+                            document.querySelector(".auth-card")?.scrollIntoView({ behavior: "smooth" });
+                        }
+                    }, "Sign Up to Ride")
+                )
+            ),
+            h("div", { className: "cta-card driver-cta" },
+                h("div", { className: "cta-content" },
+                    h("span", { className: "cta-kicker" }, "Drive with us"),
+                    h("h2", null, "Want to earn on your schedule?"),
+                    h("p", null, "Sign up as a Driver to offer reliable rides, manage your own shifts, and make competitive earnings."),
+                    h("button", {
+                        className: "primary cta-btn",
+                        onClick: () => {
+                            setRole("DRIVER");
+                            setAuthMode("signup");
+                            document.querySelector(".auth-card")?.scrollIntoView({ behavior: "smooth" });
+                        }
+                    }, "Become a Driver")
+                )
             )
         )
     );
