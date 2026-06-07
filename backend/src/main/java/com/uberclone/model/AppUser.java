@@ -28,6 +28,8 @@ public class AppUser {
 
     private double rating = 5.0;
 
+    private double walletBalance = 0.0;
+
     public AppUser() {
     }
 
@@ -87,5 +89,13 @@ public class AppUser {
 
     public void setRating(double rating) {
         this.rating = rating;
+    }
+
+    public double getWalletBalance() {
+        return walletBalance;
+    }
+
+    public void setWalletBalance(double walletBalance) {
+        this.walletBalance = walletBalance;
     }
 }

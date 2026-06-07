@@ -2,19 +2,21 @@ package com.uberclone.service;
 
 import com.uberclone.dto.FareEstimate;
 import com.uberclone.dto.RideRequest;
+import com.uberclone.model.AppUser;
 import com.uberclone.model.DriverProfile;
 import com.uberclone.model.Ride;
 import com.uberclone.model.RideStatus;
 import com.uberclone.model.VehicleType;
+import com.uberclone.model.PaymentTransaction;
 import com.uberclone.repository.AppUserRepository;
 import com.uberclone.repository.DriverProfileRepository;
+import com.uberclone.repository.PaymentTransactionRepository;
 import com.uberclone.repository.RideRepository;
 import com.uberclone.websocket.RideEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Duration;
-import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.Comparator;
 import java.util.List;
@@ -25,16 +27,18 @@ public class RideService {
     private final RideRepository rideRepository;
     private final AppUserRepository userRepository;
     private final DriverProfileRepository driverRepository;
+    private final PaymentTransactionRepository paymentTransactionRepository;
     private final GeoService geoService;
     private final RideEventPublisher rideEventPublisher;
     private final Random random = new Random();
 
     public RideService(RideRepository rideRepository, AppUserRepository userRepository,
-                       DriverProfileRepository driverRepository, GeoService geoService,
-                       RideEventPublisher rideEventPublisher) {
+                       DriverProfileRepository driverRepository, PaymentTransactionRepository paymentTransactionRepository,
+                       GeoService geoService, RideEventPublisher rideEventPublisher) {
         this.rideRepository = rideRepository;
         this.userRepository = userRepository;
         this.driverRepository = driverRepository;
+        this.paymentTransactionRepository = paymentTransactionRepository;
         this.geoService = geoService;
         this.rideEventPublisher = rideEventPublisher;
     }
@@ -148,13 +152,46 @@ public class RideService {
         if (ride.getStatus() != RideStatus.COMPLETED) {
             throw new IllegalStateException("Ride must be completed before payment");
         }
+        if (ride.isPaid()) {
+            throw new IllegalStateException("Ride is already paid");
+        }
+
         String method = paymentMethod == null || paymentMethod.isBlank() ? "UPI" : paymentMethod.trim().toUpperCase();
+        String reference = "PAY-" + ride.getId() + "-" + (10000 + random.nextInt(90000));
+        AppUser rider = ride.getRider();
+
+        if ("WALLET".equals(method)) {
+            if (rider.getWalletBalance() < ride.getFare()) {
+                throw new IllegalStateException("Insufficient wallet balance. Please top up your wallet or choose another payment method.");
+            }
+            rider.setWalletBalance(rider.getWalletBalance() - ride.getFare());
+            userRepository.save(rider);
+        }
+
+        // Create transaction for Rider
+        String description = "Ride #" + ride.getId() + " fare from " + shortName(ride.getPickupAddress()) + " to " + shortName(ride.getDropAddress());
+        paymentTransactionRepository.save(new PaymentTransaction(
+                rider, ride.getId(), -ride.getFare(), method, reference, "SUCCESS", "RIDE_FARE", description
+        ));
+
         ride.setPaid(true);
         ride.setPaymentMethod(method);
-        ride.setPaymentReference("PAY-" + ride.getId() + "-" + (10000 + random.nextInt(90000)));
+        ride.setPaymentReference(reference);
         ride.setPaidAt(LocalDateTime.now());
+
         if (ride.getDriver() != null) {
             DriverProfile driver = ride.getDriver();
+            AppUser driverUser = driver.getUser();
+            
+            // Credit earnings to driver's user account balance
+            driverUser.setWalletBalance(driverUser.getWalletBalance() + ride.getFare());
+            userRepository.save(driverUser);
+
+            // Create credit transaction for Driver
+            paymentTransactionRepository.save(new PaymentTransaction(
+                    driverUser, ride.getId(), ride.getFare(), method, reference, "SUCCESS", "RIDE_EARNING", "Earnings for " + description
+            ));
+
             driver.refreshDutyDay();
             if (driver.currentDutyMinutes() >= DriverProfile.OVERTIME_DAILY_MINUTES) {
                 driver.stopDuty();
@@ -303,42 +340,18 @@ public class RideService {
         return Math.max(1, (seconds + 59) / 60);
     }
 
-    private long completedRideMinutes(Ride ride) {
-        if (ride.getDurationMinutes() != null && ride.getDurationMinutes() > 0) {
-            return ride.getDurationMinutes();
-        }
-        LocalDateTime finishedAt = rideFinishedAt(ride);
-        if (finishedAt == null && ride.getStatus() == RideStatus.COMPLETED) {
-            finishedAt = LocalDateTime.now();
-        }
-        if (finishedAt == null) return 0;
-        LocalDateTime startedAt = ride.getStartedAt() == null ? ride.getRequestedAt() : ride.getStartedAt();
-        return startedAt == null ? 0 : rideMinutes(startedAt, finishedAt);
-    }
-
-    private boolean happenedOn(Ride ride, LocalDate date) {
-        return isSameDate(ride.getCompletedAt(), date)
-                || isSameDate(ride.getPaidAt(), date)
-                || isSameDate(ride.getStartedAt(), date)
-                || isSameDate(ride.getRequestedAt(), date);
-    }
-
-    private boolean isSameDate(LocalDateTime value, LocalDate date) {
-        return value != null && value.toLocalDate().equals(date);
-    }
-
-    private LocalDateTime rideFinishedAt(Ride ride) {
-        if (ride.getCompletedAt() != null) {
-            return ride.getCompletedAt();
-        }
-        return ride.getPaidAt();
-    }
-
     private int etaMinutes(double distance) {
         return Math.max(3, (int) Math.round(distance * 2.5));
     }
 
     private double round(double value) {
         return Math.round(value * 100.0) / 100.0;
+    }
+
+    private String shortName(String address) {
+        if (address == null || address.isBlank()) return "";
+        String[] parts = address.split(",");
+        if (parts.length <= 2) return address.trim();
+        return (parts[0].trim() + ", " + parts[1].trim());
     }
 }

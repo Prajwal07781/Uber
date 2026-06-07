@@ -5,6 +5,12 @@ import com.uberclone.dto.RideRequest;
 import com.uberclone.dto.RideResponse;
 import com.uberclone.model.DriverProfile;
 import com.uberclone.model.VehicleType;
+import com.uberclone.model.AppUser;
+import com.uberclone.model.PaymentTransaction;
+import com.uberclone.dto.UserResponse;
+import com.uberclone.dto.TransactionResponse;
+import com.uberclone.repository.AppUserRepository;
+import com.uberclone.repository.PaymentTransactionRepository;
 import com.uberclone.repository.DriverProfileRepository;
 import com.uberclone.service.GeoService;
 import com.uberclone.service.RideService;
@@ -24,19 +30,26 @@ import java.util.List;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Comparator;
+import java.util.Random;
 
 @RestController
 @RequestMapping("/api")
 public class RideApiController {
     private final RideService rideService;
     private final DriverProfileRepository driverRepository;
+    private final AppUserRepository userRepository;
+    private final PaymentTransactionRepository paymentTransactionRepository;
     private final GeoService geoService;
     private final RideEventPublisher rideEventPublisher;
+    private final Random random = new Random();
 
     public RideApiController(RideService rideService, DriverProfileRepository driverRepository,
+                             AppUserRepository userRepository, PaymentTransactionRepository paymentTransactionRepository,
                              GeoService geoService, RideEventPublisher rideEventPublisher) {
         this.rideService = rideService;
         this.driverRepository = driverRepository;
+        this.userRepository = userRepository;
+        this.paymentTransactionRepository = paymentTransactionRepository;
         this.geoService = geoService;
         this.rideEventPublisher = rideEventPublisher;
     }
@@ -104,7 +117,81 @@ public class RideApiController {
     @PatchMapping("/rides/{id}/pay")
     public RideResponse pay(@PathVariable Long id, @RequestBody(required = false) Map<String, String> body) {
         String method = body == null ? "UPI" : body.getOrDefault("method", "UPI");
+        String details = body == null ? "" : body.getOrDefault("details", "");
+        
+        if ("CARD".equals(method)) {
+            if (details == null || !details.matches("\\d{16}")) {
+                throw new IllegalArgumentException("Invalid card format. Must be a 16-digit card number.");
+            }
+        } else if ("UPI".equals(method)) {
+            if (details == null || !details.contains("@")) {
+                throw new IllegalArgumentException("Invalid UPI ID. Must contain '@' (e.g. user@upi).");
+            }
+        }
+        
         return rideResponse(rideService.payRide(id, method));
+    }
+
+    @GetMapping("/users/{id}")
+    public UserResponse getUserProfile(@PathVariable Long id) {
+        AppUser user = userRepository.findById(id)
+                .orElseThrow(() -> new IllegalArgumentException("User not found"));
+        Long driverId = null;
+        if (user.getRole() == com.uberclone.model.Role.DRIVER) {
+            driverId = driverRepository.findByUserId(user.getId())
+                    .map(DriverProfile::getId)
+                    .orElse(null);
+        }
+        return UserResponse.from(user, driverId, "");
+    }
+
+    @GetMapping("/users/{id}/transactions")
+    public List<TransactionResponse> getTransactions(@PathVariable Long id) {
+        return paymentTransactionRepository.findByUserIdOrderByCreatedAtDesc(id).stream()
+                .map(TransactionResponse::from)
+                .toList();
+    }
+
+    @PostMapping("/users/{id}/wallet/topup")
+    public UserResponse topUpWallet(@PathVariable Long id, @RequestBody Map<String, Object> body) {
+        AppUser user = userRepository.findById(id)
+                .orElseThrow(() -> new IllegalArgumentException("User not found"));
+        
+        double amount = Double.parseDouble(body.get("amount").toString());
+        if (amount <= 0) {
+            throw new IllegalArgumentException("Amount must be greater than zero");
+        }
+        
+        String method = body.getOrDefault("method", "CARD").toString().toUpperCase();
+        String details = body.getOrDefault("details", "").toString();
+        
+        if ("CARD".equals(method)) {
+            if (details == null || !details.matches("\\d{16}")) {
+                throw new IllegalArgumentException("Invalid card format. Must be a 16-digit card number.");
+            }
+        } else if ("UPI".equals(method)) {
+            if (details == null || !details.contains("@")) {
+                throw new IllegalArgumentException("Invalid UPI ID. Must contain '@' (e.g. user@upi).");
+            }
+        } else {
+            throw new IllegalArgumentException("Invalid top up payment method");
+        }
+
+        user.setWalletBalance(user.getWalletBalance() + amount);
+        AppUser savedUser = userRepository.save(user);
+
+        String reference = "TOP-" + user.getId() + "-" + (10000 + random.nextInt(90000));
+        paymentTransactionRepository.save(new PaymentTransaction(
+                savedUser, null, amount, method, reference, "SUCCESS", "WALLET_TOPUP", "Wallet Top-up via " + method
+        ));
+
+        Long driverId = null;
+        if (savedUser.getRole() == com.uberclone.model.Role.DRIVER) {
+            driverId = driverRepository.findByUserId(savedUser.getId())
+                    .map(DriverProfile::getId)
+                    .orElse(null);
+        }
+        return UserResponse.from(savedUser, driverId, "");
     }
 
     @PatchMapping("/rides/{id}/cancel")
@@ -190,6 +277,7 @@ public class RideApiController {
         payload.put("name", driver.getUser().getName());
         payload.put("phone", driver.getUser().getPhone());
         payload.put("rating", driver.getUser().getRating());
+        payload.put("walletBalance", driver.getUser().getWalletBalance());
         payload.put("ratingCount", driver.getRatingCount());
         payload.put("vehicleType", driver.getVehicleType());
         payload.put("vehicleLabel", driver.getVehicleType().getLabel());

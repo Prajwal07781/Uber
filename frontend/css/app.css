@@ -1905,3 +1905,324 @@ select:focus {
         grid-template-columns: 1fr;
     }
 }
+
+/* Wallet & Payments Styling */
+.wallet-pill-btn {
+    background: rgba(255, 255, 255, 0.08);
+    color: #fff;
+    border: 1px solid rgba(255, 255, 255, 0.24);
+    padding: 8px 16px;
+    border-radius: 999px;
+    font-size: 0.9rem;
+    font-weight: 800;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    transition: all 0.2s ease;
+}
+
+.wallet-pill-btn:hover {
+    background: rgba(255, 255, 255, 0.16);
+    border-color: #7cf0b7;
+    transform: translateY(-1px);
+}
+
+.wallet-pill-btn.rider {
+    border-color: rgba(9, 122, 83, 0.4);
+}
+
+.wallet-pill-btn.driver {
+    border-color: rgba(23, 104, 207, 0.4);
+}
+
+.dashboard-tabs-container {
+    grid-column: 1 / -1;
+    margin: 10px 0 20px;
+    border-bottom: 2px solid var(--line);
+}
+
+.dashboard-tabs {
+    display: flex;
+    gap: 20px;
+}
+
+.dashboard-tab {
+    background: transparent;
+    border: none;
+    border-radius: 0;
+    box-shadow: none;
+    color: var(--muted);
+    font-weight: 800;
+    font-size: 1.05rem;
+    padding: 12px 6px;
+    cursor: pointer;
+    position: relative;
+    transition: color 0.2s ease;
+}
+
+.dashboard-tab::after {
+    content: "";
+    position: absolute;
+    bottom: -2px;
+    left: 0;
+    right: 0;
+    height: 3px;
+    background: transparent;
+    transition: background-color 0.2s ease;
+}
+
+.dashboard-tab:hover {
+    color: var(--ink-strong);
+    background: transparent;
+}
+
+.dashboard-tab.active {
+    color: var(--ink-strong);
+}
+
+.dashboard-tab.active::after {
+    background: var(--ink-strong);
+}
+
+.wallet-tab-content {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
+    gap: 20px;
+    animation: fadeIn 0.3s ease;
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(8px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+.wallet-ledger-panel {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
+    gap: 20px;
+}
+
+.topup-card form {
+    display: grid;
+    gap: 16px;
+}
+
+.preset-buttons {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+    margin-bottom: 6px;
+}
+
+.preset-btn {
+    flex: 1 1 80px;
+    background: #f4f6f7;
+    color: var(--ink);
+    border: 1px solid var(--line);
+    padding: 8px 12px;
+    font-weight: 750;
+    font-size: 0.9rem;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 0.18s ease;
+}
+
+.preset-btn:hover {
+    background: #e9ecee;
+    border-color: var(--line-strong);
+}
+
+.preset-btn.active {
+    background: var(--ink-strong);
+    color: #fff;
+    border-color: var(--ink-strong);
+}
+
+.topup-submit-btn {
+    margin-top: 10px;
+    font-size: 1rem;
+    font-weight: 800;
+}
+
+.payment-details-inputs {
+    margin: 10px 0;
+    padding: 12px;
+    background: #f8fafb;
+    border: 1px dashed var(--line);
+    border-radius: 6px;
+    animation: slideDown 0.2s ease;
+}
+
+@keyframes slideDown {
+    from { opacity: 0; transform: translateY(-8px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+.wallet-info-status {
+    margin: 8px 0;
+    font-size: 0.9rem;
+    font-weight: 750;
+    color: #34404a;
+}
+
+.wallet-warning {
+    color: var(--red);
+}
+
+.payment-error-banner {
+    background: #ffe3e3;
+    color: var(--red);
+    border: 1px solid #f1a8b1;
+    padding: 10px 12px;
+    border-radius: 6px;
+    font-weight: 750;
+    font-size: 0.9rem;
+    margin-bottom: 12px;
+    animation: shake 0.3s ease;
+}
+
+@keyframes shake {
+    0%, 100% { transform: translateX(0); }
+    25% { transform: translateX(-4px); }
+    75% { transform: translateX(4px); }
+}
+
+.error-banner-small {
+    background: #ffe3e3;
+    color: #9f1f2e;
+    border-left: 4px solid var(--red);
+    padding: 8px 12px;
+    font-size: 0.85rem;
+    font-weight: 750;
+    border-radius: 4px;
+}
+
+.success-banner-small {
+    background: #dff8ef;
+    color: #075f45;
+    border-left: 4px solid var(--green);
+    padding: 8px 12px;
+    font-size: 0.85rem;
+    font-weight: 750;
+    border-radius: 4px;
+}
+
+.ledger-card {
+    display: flex;
+    flex-direction: column;
+}
+
+.transaction-list-container {
+    margin-top: 10px;
+    flex: 1;
+    max-height: 480px;
+    overflow-y: auto;
+}
+
+.tx-table-wrapper {
+    overflow-x: auto;
+}
+
+.transaction-table {
+    width: 100%;
+    border-collapse: collapse;
+    text-align: left;
+}
+
+.transaction-table th {
+    padding: 10px 12px;
+    border-bottom: 2px solid var(--line);
+    color: var(--muted);
+    font-size: 0.82rem;
+    font-weight: 900;
+    text-transform: uppercase;
+}
+
+.transaction-table td {
+    padding: 12px;
+    border-bottom: 1px solid var(--line);
+    vertical-align: middle;
+}
+
+.transaction-table tr:hover td {
+    background: rgba(246, 248, 249, 0.5);
+}
+
+.tx-type-desc {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.tx-badge {
+    padding: 3px 8px;
+    border-radius: 999px;
+    font-size: 0.72rem;
+    font-weight: 900;
+    text-transform: uppercase;
+}
+
+.tx-badge.wallet_topup {
+    background: #dff1ff;
+    color: #1768cf;
+}
+
+.tx-badge.ride_fare {
+    background: #ffe3e3;
+    color: #cf2a17;
+}
+
+.tx-badge.ride_earning {
+    background: #ddf5eb;
+    color: #08764a;
+}
+
+.tx-desc {
+    font-weight: 750;
+    color: var(--ink-strong);
+    font-size: 0.92rem;
+}
+
+.tx-date {
+    display: block;
+    margin-top: 4px;
+    color: var(--muted);
+    font-size: 0.76rem;
+    font-weight: 650;
+}
+
+.tx-ref-container {
+    display: grid;
+    gap: 2px;
+}
+
+.tx-ref-container strong {
+    font-size: 0.88rem;
+    color: var(--ink);
+}
+
+.tx-ref-container small {
+    font-size: 0.72rem;
+    color: var(--muted);
+    font-family: monospace;
+}
+
+.tx-amount {
+    font-size: 1.05rem;
+    font-weight: 850;
+    white-space: nowrap;
+}
+
+.tx-amount.debit {
+    color: var(--red);
+}
+
+.tx-amount.credit {
+    color: var(--green);
+}
+
+.text-right {
+    text-align: right;
+}

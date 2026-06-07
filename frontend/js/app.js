@@ -32,12 +32,15 @@ function cx(...parts) {
     return parts.filter(Boolean).join(" ");
 }
 
+const BASE_URL = window.location.origin.includes("localhost:8081") ? "" : "http://localhost:8081";
+
 async function api(path, options = {}) {
     const headers = { "Content-Type": "application/json", ...(options.headers || {}) };
     if (sessionToken) {
         headers.Authorization = `Bearer ${sessionToken}`;
     }
-    const response = await fetch(path, {
+    const url = path.startsWith("http") ? path : `${BASE_URL}${path}`;
+    const response = await fetch(url, {
         ...options,
         headers
     });
@@ -137,9 +140,13 @@ function SafetyWarning({ status = "UNKNOWN", audience = "driver" }) {
     );
 }
 
-function Topbar({ user, view, onLogout }) {
+function Topbar({ user, view, onLogout, onWalletClick }) {
+    // Determine wallet label and balance
+    const balance = user ? user.walletBalance : 0;
+    const walletText = user ? (user.role === "DRIVER" ? `Earnings: Rs ${Number(balance || 0).toFixed(2)}` : `Wallet: Rs ${Number(balance || 0).toFixed(2)}`) : "";
+
     return h("header", { className: "topbar" },
-        h("a", { className: "brand-lockup", href: "#" },
+        h("a", { className: "brand-lockup", href: "#", onClick: (e) => { e.preventDefault(); if (user && onWalletClick) onWalletClick("dashboard"); } },
             h("span", { className: "brand-mark" }, "Smart Ride"),
             h("span", { className: "brand-copy" },
                 h("span", null, "Fast & Affordable"),
@@ -152,6 +159,7 @@ function Topbar({ user, view, onLogout }) {
             h("a", { href: "#safety" }, "Safety")
         ) : null,
         h("div", { className: "top-actions" },
+            user ? h("button", { className: cx("wallet-pill-btn", user.role.toLowerCase()), onClick: () => onWalletClick && onWalletClick("wallet") }, walletText) : null,
             h("span", null, user ? `${user.name} | ${user.role}` : view === "auth" ? "Not signed in" : ""),
             user ? h("button", { className: "ghost", onClick: onLogout }, "Logout") : null
         )
@@ -659,7 +667,37 @@ function DriverCard({ driver }) {
     );
 }
 
-function PaymentPanel({ ride, paymentMethod, setPaymentMethod, onPay }) {
+function PaymentPanel({ ride, paymentMethod, setPaymentMethod, onPay, userBalance }) {
+    const [cardDetails, setCardDetails] = useState("");
+    const [upiDetails, setUpiDetails] = useState("");
+    const [errorMsg, setErrorMsg] = useState("");
+
+    const handlePay = () => {
+        setErrorMsg("");
+        if (paymentMethod === "WALLET") {
+            if (userBalance < ride.fare) {
+                setErrorMsg("Insufficient wallet balance. Please top up your wallet or choose another payment method.");
+                return;
+            }
+            onPay(ride.id, "WALLET", "");
+        } else if (paymentMethod === "CARD") {
+            if (!cardDetails || !cardDetails.match(/^\d{16}$/)) {
+                setErrorMsg("Invalid card format. Please enter a 16-digit card number.");
+                return;
+            }
+            onPay(ride.id, "CARD", cardDetails);
+        } else if (paymentMethod === "UPI") {
+            if (!upiDetails || !upiDetails.includes("@")) {
+                setErrorMsg("Invalid UPI ID. Please enter a valid ID containing '@' (e.g. user@upi).");
+                return;
+            }
+            onPay(ride.id, "UPI", upiDetails);
+        } else {
+            // CASH
+            onPay(ride.id, "CASH", "");
+        }
+    };
+
     return h("div", { className: "payment-box" },
         h("div", { className: "payment-head" },
             h("div", null, h("strong", null, "Complete payment"), h("span", null, `Fare total Rs ${ride.fare} for ${ride.vehicleLabel}`)),
@@ -670,10 +708,40 @@ function PaymentPanel({ ride, paymentMethod, setPaymentMethod, onPay }) {
                 key: method.id,
                 type: "button",
                 className: cx("payment-option", paymentMethod === method.id && "active"),
-                onClick: () => setPaymentMethod(method.id)
+                onClick: () => { setPaymentMethod(method.id); setErrorMsg(""); }
             }, h("strong", null, method.label), h("span", null, method.detail)))
         ),
-        h("button", { className: "primary", onClick: () => onPay(ride.id) }, `Pay with ${paymentMethod}`)
+        paymentMethod === "CARD" ? h("div", { className: "payment-details-inputs" },
+            Field({
+                label: "Card Number",
+                children: h("input", {
+                    value: cardDetails,
+                    onChange: e => setCardDetails(e.target.value.replace(/\D/g, "").slice(0, 16)),
+                    placeholder: "xxxx xxxx xxxx xxxx (16 digits)",
+                    maxLength: 16,
+                    type: "text",
+                    required: true
+                })
+            })
+        ) : null,
+        paymentMethod === "UPI" ? h("div", { className: "payment-details-inputs" },
+            Field({
+                label: "UPI ID",
+                children: h("input", {
+                    value: upiDetails,
+                    onChange: e => setUpiDetails(e.target.value),
+                    placeholder: "username@bank / username@upi",
+                    type: "text",
+                    required: true
+                })
+            })
+        ) : null,
+        paymentMethod === "WALLET" ? h("div", { className: "wallet-info-status" },
+            h("span", null, `Wallet balance: Rs ${Number(userBalance || 0).toFixed(2)}`),
+            userBalance < ride.fare ? h("span", { className: "wallet-warning" }, " (Insufficient balance)") : null
+        ) : null,
+        errorMsg ? h("div", { className: "payment-error-banner" }, errorMsg) : null,
+        h("button", { className: "primary", onClick: handlePay }, `Pay with ${paymentMethod}`)
     );
 }
 
@@ -704,7 +772,7 @@ function RatingControl({ ride, onRate }) {
     );
 }
 
-function RiderRideCard({ ride, paymentMethod, setPaymentMethod, onPay, onCancel, onRate }) {
+function RiderRideCard({ ride, paymentMethod, setPaymentMethod, onPay, onCancel, onRate, userBalance }) {
     if (!ride) return h("p", { className: "subtle" }, "No ride yet. Confirm a ride to send it to nearby drivers.");
     return h("article", { className: "ride-card" },
         h("div", { className: "ride-head" },
@@ -729,10 +797,181 @@ function RiderRideCard({ ride, paymentMethod, setPaymentMethod, onPay, onCancel,
             h("div", null, h("strong", null, "Waiting for driver to confirm"), h("span", null, `Nearby ${ride.vehicleLabel.toLowerCase()} drivers can see your request now.`))
         ) : null,
         ride.status === "ACCEPTED" ? h("div", { className: "otp-box" }, "Start OTP: ", h("strong", null, ride.otp)) : null,
-        ride.status === "COMPLETED" && !ride.paid ? h(PaymentPanel, { ride, paymentMethod, setPaymentMethod, onPay }) : null,
+        ride.status === "COMPLETED" && !ride.paid ? h(PaymentPanel, { ride, paymentMethod, setPaymentMethod, onPay, userBalance }) : null,
         ride.status === "COMPLETED" && ride.paid ? h(Receipt, { ride }) : null,
         ride.status === "COMPLETED" && ride.paid ? h(RatingControl, { ride, onRate }) : null,
         ["REQUESTED", "ACCEPTED"].includes(ride.status) ? h("button", { onClick: () => onCancel(ride.id) }, "Cancel ride") : null
+    );
+}
+
+function WalletDashboardPanel({ user, transactions, onTopUp, fetchTransactions }) {
+    const [topUpAmount, setTopUpAmount] = useState("");
+    const [topUpMethod, setTopUpMethod] = useState("CARD");
+    const [topUpDetails, setTopUpDetails] = useState("");
+    const [topUpError, setTopUpError] = useState("");
+    const [topUpSuccess, setTopUpSuccess] = useState("");
+    const [submitting, setSubmitting] = useState(false);
+
+    useEffect(() => {
+        fetchTransactions();
+    }, []);
+
+    const handlePreset = (amount) => {
+        setTopUpAmount(amount.toString());
+        setTopUpError("");
+        setTopUpSuccess("");
+    };
+
+    const handleTopUpSubmit = async (e) => {
+        e.preventDefault();
+        setTopUpError("");
+        setTopUpSuccess("");
+        const amountNum = parseFloat(topUpAmount);
+        if (isNaN(amountNum) || amountNum <= 0) {
+            setTopUpError("Please enter a valid amount greater than 0");
+            return;
+        }
+
+        if (topUpMethod === "CARD") {
+            if (!topUpDetails || !topUpDetails.match(/^\d{16}$/)) {
+                setTopUpError("Invalid card format. Please enter a 16-digit card number.");
+                return;
+            }
+        } else if (topUpMethod === "UPI") {
+            if (!topUpDetails || !topUpDetails.includes("@")) {
+                setTopUpError("Invalid UPI ID format. Must contain '@' (e.g. user@upi).");
+                return;
+            }
+        }
+
+        setSubmitting(true);
+        try {
+            await onTopUp(amountNum, topUpMethod, topUpDetails);
+            setTopUpSuccess(`Successfully topped up Rs ${amountNum.toFixed(2)}!`);
+            setTopUpAmount("");
+            setTopUpDetails("");
+        } catch (err) {
+            setTopUpError(err.message || "Failed to process top-up.");
+        } finally {
+            setSubmitting(false);
+        }
+    };
+
+    const balance = user ? (user.role === "DRIVER" ? (user.walletBalance ?? 500.0) : (user.walletBalance ?? 1500.0)) : 0;
+
+    return h("div", { className: "wallet-ledger-panel wide" },
+        user?.role === "RIDER" ? h("div", { className: "panel topup-card" },
+            SectionTitle({ title: "Top Up Wallet", meta: "Add money instantly" }),
+            h("form", { onSubmit: handleTopUpSubmit },
+                h("div", { className: "preset-buttons" },
+                    [100, 500, 1000].map(amt => h("button", {
+                        key: amt,
+                        type: "button",
+                        className: cx("preset-btn", Number(topUpAmount) === amt && "active"),
+                        onClick: () => handlePreset(amt)
+                    }, `+ Rs ${amt}`))
+                ),
+                h("div", { className: "grid two" },
+                    Field({
+                        label: "Amount (Rs)",
+                        children: h("input", {
+                            type: "number",
+                            value: topUpAmount,
+                            onChange: e => { setTopUpAmount(e.target.value); setTopUpError(""); setTopUpSuccess(""); },
+                            placeholder: "Enter amount",
+                            min: "1",
+                            required: true
+                        })
+                    }),
+                    Field({
+                        label: "Top-up Method",
+                        children: h("select", {
+                            value: topUpMethod,
+                            onChange: e => { setTopUpMethod(e.target.value); setTopUpDetails(""); setTopUpError(""); setTopUpSuccess(""); }
+                        },
+                            h("option", { value: "CARD" }, "Debit/Credit Card"),
+                            h("option", { value: "UPI" }, "UPI / Instant Pay")
+                        )
+                    })
+                ),
+                Field({
+                    label: topUpMethod === "CARD" ? "16-digit Card Number" : "UPI ID",
+                    children: h("input", {
+                        type: "text",
+                        value: topUpDetails,
+                        onChange: e => {
+                            let val = e.target.value;
+                            if (topUpMethod === "CARD") {
+                                val = val.replace(/\D/g, "").slice(0, 16);
+                            }
+                            setTopUpDetails(val);
+                            setTopUpError("");
+                            setTopUpSuccess("");
+                        },
+                        placeholder: topUpMethod === "CARD" ? "xxxx xxxx xxxx xxxx" : "username@bank",
+                        maxLength: topUpMethod === "CARD" ? 16 : 50,
+                        required: true
+                    })
+                }),
+                topUpError ? h("div", { className: "error-banner-small" }, topUpError) : null,
+                topUpSuccess ? h("div", { className: "success-banner-small" }, topUpSuccess) : null,
+                h("button", { type: "submit", className: "primary topup-submit-btn", disabled: submitting },
+                    submitting ? "Processing..." : "Add to Wallet"
+                )
+            )
+        ) : null,
+        h("div", { className: "panel ledger-card" },
+            SectionTitle({
+                title: "Transaction Ledger History",
+                meta: `${user?.role === "RIDER" ? "Wallet" : "Earnings"} statement logs`,
+                action: h("button", { type: "button", onClick: fetchTransactions, className: "ghost btn-sm" }, "Refresh Ledger")
+            }),
+            h("div", { className: "transaction-list-container" },
+                transactions.length === 0
+                    ? h("p", { className: "subtle" }, "No transactions found yet. Complete a trip or top up to populate your statement ledger.")
+                    : h("div", { className: "tx-table-wrapper" },
+                        h("table", { className: "transaction-table" },
+                            h("thead", null,
+                                h("tr", null,
+                                    h("th", null, "Transaction Details"),
+                                    h("th", null, "Method / Ref"),
+                                    h("th", { className: "text-right" }, "Amount")
+                                )
+                            ),
+                            h("tbody", null,
+                                transactions.map(tx => {
+                                    const isDebit = tx.amount < 0;
+                                    const amtString = isDebit
+                                        ? `- Rs ${Math.abs(tx.amount).toFixed(2)}`
+                                        : `+ Rs ${tx.amount.toFixed(2)}`;
+                                    const typeLabel = tx.type === "WALLET_TOPUP"
+                                        ? "Top Up"
+                                        : tx.type === "RIDE_FARE"
+                                            ? "Ride Fare"
+                                            : "Ride Earnings";
+
+                                    return h("tr", { key: tx.id },
+                                        h("td", null,
+                                            h("div", { className: "tx-type-desc" },
+                                                h("span", { className: cx("tx-badge", tx.type.toLowerCase()) }, typeLabel),
+                                                h("span", { className: "tx-desc" }, tx.description)
+                                            ),
+                                            h("small", { className: "tx-date" }, tx.createdAt)
+                                        ),
+                                        h("td", null,
+                                            h("div", { className: "tx-ref-container" },
+                                                h("strong", null, tx.paymentMethod),
+                                                h("small", null, tx.paymentReference)
+                                            )
+                                        ),
+                                        h("td", { className: cx("tx-amount text-right", isDebit ? "debit" : "credit") }, amtString)
+                                    );
+                                })
+                            )
+                        )
+                    )
+            )
+        )
     );
 }
 
@@ -741,7 +980,7 @@ function RiderDashboard(props) {
         pickupAddress, setPickupAddress, dropAddress, setDropAddress, pickup, drop,
         setPickup, setDrop, estimates, vehicleType, setVehicleType, availableDrivers,
         latestRide, status, loadEstimates, requestRide, refreshRider, paymentMethod,
-        setPaymentMethod, payRide, cancelRide, rateRide, liveStatus
+        setPaymentMethod, payRide, cancelRide, rateRide, liveStatus, activeTab
     } = props;
     const selectedEstimate = estimates.find(estimate => estimate.vehicleType === vehicleType);
 
@@ -750,72 +989,84 @@ function RiderDashboard(props) {
             items: [
                 { label: "Total bookings", value: props.ridesCount },
                 { label: "Current trip", value: latestRide?.status || "Idle" },
-                { label: "Selected vehicle", value: selectedEstimate?.label || "Cab" },
+                { label: "Wallet balance", value: `Rs ${Number(props.user?.walletBalance || 0).toFixed(2)}` },
                 { label: "Realtime", value: liveStatus }
             ]
         }),
-        h(RideNotice, { ride: latestRide }),
-        h("div", { className: "panel booking" },
-            SectionTitle({ title: "Book a ride", meta: status }),
-            h("form", { onSubmit: requestRide },
-                h("div", { className: "grid two" },
-                    h(PlaceInput, {
-                        label: "Pickup",
-                        value: pickupAddress,
-                        onInput: setPickupAddress,
-                        onSelect: place => {
-                            setPickup(place);
-                            setPickupAddress(place.name);
-                        }
-                    }),
-                    h(PlaceInput, {
-                        label: "Destination",
-                        value: dropAddress,
-                        onInput: setDropAddress,
-                        onSelect: place => {
-                            setDrop(place);
-                            setDropAddress(place.name);
-                        }
-                    })
+        h("div", { className: "dashboard-tabs-container wide" },
+            h("div", { className: "dashboard-tabs" },
+                h("button", { type: "button", className: cx("dashboard-tab", activeTab === "dashboard" && "active"), onClick: () => props.setActiveTab("dashboard") }, "Ride Dashboard"),
+                h("button", { type: "button", className: cx("dashboard-tab", activeTab === "wallet" && "active"), onClick: () => { props.setActiveTab("wallet"); props.fetchTransactions(); } }, "Wallet & Statement Ledger")
+            )
+        ),
+        activeTab === "wallet"
+            ? h("div", { className: "wallet-tab-content wide" },
+                h(WalletDashboardPanel, { user: props.user, transactions: props.transactions, onTopUp: props.topUpWallet, fetchTransactions: props.fetchTransactions })
+              )
+            : h(React.Fragment, null,
+                h(RideNotice, { ride: latestRide }),
+                h("div", { className: "panel booking" },
+                    SectionTitle({ title: "Book a ride", meta: status }),
+                    h("form", { onSubmit: requestRide },
+                        h("div", { className: "grid two" },
+                            h(PlaceInput, {
+                                label: "Pickup",
+                                value: pickupAddress,
+                                onInput: setPickupAddress,
+                                onSelect: place => {
+                                    setPickup(place);
+                                    setPickupAddress(place.name);
+                                }
+                            }),
+                            h(PlaceInput, {
+                                label: "Destination",
+                                value: dropAddress,
+                                onInput: setDropAddress,
+                                onSelect: place => {
+                                    setDrop(place);
+                                    setDropAddress(place.name);
+                                }
+                            })
+                        ),
+                        h(VehicleOptions, {
+                            estimates,
+                            vehicleType,
+                            onSelect: type => {
+                                setVehicleType(type);
+                                loadEstimates(type);
+                            }
+                        }),
+                        h("div", { className: "actions" },
+                            h("button", { type: "button", onClick: () => loadEstimates(vehicleType) }, "Show vehicles"),
+                            h("button", { type: "submit", className: "primary" }, "Confirm ride")
+                        )
+                    )
                 ),
-                h(VehicleOptions, {
-                    estimates,
-                    vehicleType,
-                    onSelect: type => {
-                        setVehicleType(type);
-                        loadEstimates(type);
-                    }
+                h(MapPanel, {
+                    title: "Live Map",
+                    meta: mapText(latestRide),
+                    pickup: latestRide ? ridePoint(latestRide, "pickup") : pickup,
+                    drop: latestRide ? ridePoint(latestRide, "drop") : drop,
+                    progress: latestRide?.progressPercent || 0
                 }),
-                h("div", { className: "actions" },
-                    h("button", { type: "button", onClick: () => loadEstimates(vehicleType) }, "Show vehicles"),
-                    h("button", { type: "submit", className: "primary" }, "Confirm ride")
+                h("div", { className: "panel" },
+                    SectionTitle({ title: "Available Drivers", meta: `${availableDrivers.length} online` }),
+                    h("div", { className: "driver-list" },
+                        availableDrivers.length
+                            ? availableDrivers.map(driver => h(DriverCard, { key: driver.id, driver }))
+                            : h("p", { className: "subtle" }, `No ${vehicleType} drivers are online right now.`)
+                    )
+                ),
+                h("div", { className: "panel" },
+                    SectionTitle({
+                        title: "Your ride",
+                        action: h("button", { type: "button", onClick: refreshRider }, "Refresh")
+                    }),
+                    h("div", { className: "ride-list" },
+                        h(RiderRideCard, { ride: latestRide, paymentMethod, setPaymentMethod, onPay: payRide, onCancel: cancelRide, onRate: rateRide, userBalance: props.user?.walletBalance })
+                    )
                 )
             )
-        ),
-        h(MapPanel, {
-            title: "Live Map",
-            meta: mapText(latestRide),
-            pickup: latestRide ? ridePoint(latestRide, "pickup") : pickup,
-            drop: latestRide ? ridePoint(latestRide, "drop") : drop,
-            progress: latestRide?.progressPercent || 0
-        }),
-        h("div", { className: "panel" },
-            SectionTitle({ title: "Available Drivers", meta: `${availableDrivers.length} online` }),
-            h("div", { className: "driver-list" },
-                availableDrivers.length
-                    ? availableDrivers.map(driver => h(DriverCard, { key: driver.id, driver }))
-                    : h("p", { className: "subtle" }, `No ${vehicleType} drivers are online right now.`)
-            )
-        ),
-        h("div", { className: "panel" },
-            SectionTitle({
-                title: "Your ride",
-                action: h("button", { onClick: refreshRider }, "Refresh")
-            }),
-            h("div", { className: "ride-list" },
-                h(RiderRideCard, { ride: latestRide, paymentMethod, setPaymentMethod, onPay: payRide, onCancel: cancelRide, onRate: rateRide })
-            )
-        )
     );
 }
 
@@ -900,7 +1151,11 @@ function DriverTripCard({ ride, onStart, onProgress, onComplete }) {
     );
 }
 
-function DriverDashboard({ driver, requests, trips, refreshDriver, acceptRide, startRide, progressRide, completeRide, toggleDriverDuty, driverMessage, liveStatus }) {
+function DriverDashboard(props) {
+    const {
+        driver, requests, trips, refreshDriver, acceptRide, startRide, progressRide,
+        completeRide, toggleDriverDuty, driverMessage, liveStatus, activeTab, user, transactions, fetchTransactions, setActiveTab
+    } = props;
     const active = trips.find(ride => ["ACCEPTED", "IN_PROGRESS", "COMPLETED"].includes(ride.status));
 
     return h("section", { className: "app-grid" },
@@ -908,43 +1163,55 @@ function DriverDashboard({ driver, requests, trips, refreshDriver, acceptRide, s
             items: [
                 { label: "New requests", value: requests.length },
                 { label: "Assigned trips", value: trips.length },
-                { label: "Ride hours today", value: formatWorkMinutes(driver?.workMinutesToday || 0) },
+                { label: "Earnings balance", value: `Rs ${Number(driver?.walletBalance || 0).toFixed(2)}` },
                 { label: "Availability", value: driver?.onDuty ? "On duty" : "Offline" },
                 { label: "Realtime", value: liveStatus }
             ]
         }),
-        h(DriverSafetyPanel, { driver, onToggle: toggleDriverDuty }),
-        h(SafetyWarning, { status: driver?.workStatus, audience: "driver" }),
-        driverMessage ? h("div", { className: "status-banner", role: "status" },
-            h("div", { className: "status-icon" }),
-            h("div", null, h("strong", null, "Driver update"), h("span", null, driverMessage))
-        ) : null,
-        h("div", { className: "panel" },
-            SectionTitle({
-                title: "New Ride Requests",
-                action: h("button", { onClick: refreshDriver }, "Refresh")
-            }),
-            h("div", { className: "ride-list" },
-                requests.length
-                    ? requests.map(ride => h(DriverRequestCard, { key: ride.id, ride, onAccept: acceptRide }))
-                    : h("p", { className: "subtle" }, "No new matching ride requests yet.")
+        h("div", { className: "dashboard-tabs-container wide" },
+            h("div", { className: "dashboard-tabs" },
+                h("button", { type: "button", className: cx("dashboard-tab", activeTab === "dashboard" && "active"), onClick: () => setActiveTab("dashboard") }, "Driver Operations"),
+                h("button", { type: "button", className: cx("dashboard-tab", activeTab === "wallet" && "active"), onClick: () => { setActiveTab("wallet"); fetchTransactions(); } }, "Earnings Statement Ledger")
             )
         ),
-        h(MapPanel, {
-            title: "Driver Tracking",
-            meta: active ? mapText(active) : "Accept a ride",
-            pickup: active ? ridePoint(active, "pickup") : defaultPickup,
-            drop: active ? ridePoint(active, "drop") : defaultDrop,
-            progress: active?.progressPercent || 0
-        }),
-        h("div", { className: "panel driver-active" },
-            SectionTitle({ title: "Accepted Trips" }),
-            h("div", { className: "ride-list" },
-                trips.length
-                    ? trips.map(ride => h(DriverTripCard, { key: ride.id, ride, onStart: startRide, onProgress: progressRide, onComplete: completeRide }))
-                    : h("p", { className: "subtle" }, "Accepted trips will appear here.")
+        activeTab === "wallet"
+            ? h("div", { className: "wallet-tab-content wide" },
+                h(WalletDashboardPanel, { user: user, transactions: transactions, fetchTransactions: fetchTransactions })
+              )
+            : h(React.Fragment, null,
+                h(DriverSafetyPanel, { driver, onToggle: toggleDriverDuty }),
+                h(SafetyWarning, { status: driver?.workStatus, audience: "driver" }),
+                driverMessage ? h("div", { className: "status-banner", role: "status" },
+                    h("div", { className: "status-icon" }),
+                    h("div", null, h("strong", null, "Driver update"), h("span", null, driverMessage))
+                ) : null,
+                h("div", { className: "panel" },
+                    SectionTitle({
+                        title: "New Ride Requests",
+                        action: h("button", { type: "button", onClick: refreshDriver }, "Refresh")
+                    }),
+                    h("div", { className: "ride-list" },
+                        requests.length
+                            ? requests.map(ride => h(DriverRequestCard, { key: ride.id, ride, onAccept: acceptRide }))
+                            : h("p", { className: "subtle" }, "No new matching ride requests yet.")
+                    )
+                ),
+                h(MapPanel, {
+                    title: "Driver Tracking",
+                    meta: active ? mapText(active) : "Accept a ride",
+                    pickup: active ? ridePoint(active, "pickup") : defaultPickup,
+                    drop: active ? ridePoint(active, "drop") : defaultDrop,
+                    progress: active?.progressPercent || 0
+                }),
+                h("div", { className: "panel driver-active" },
+                    SectionTitle({ title: "Accepted Trips" }),
+                    h("div", { className: "ride-list" },
+                        trips.length
+                            ? trips.map(ride => h(DriverTripCard, { key: ride.id, ride, onStart: startRide, onProgress: progressRide, onComplete: completeRide }))
+                            : h("p", { className: "subtle" }, "Accepted trips will appear here.")
+                    )
+                )
             )
-        )
     );
 }
 
@@ -969,6 +1236,29 @@ function App() {
     const [driverTrips, setDriverTrips] = useState([]);
     const [driverMessage, setDriverMessage] = useState("");
     const [liveStatus, setLiveStatus] = useState("Live updates standby");
+
+    const [activeTab, setActiveTab] = useState("dashboard");
+    const [transactions, setTransactions] = useState([]);
+
+    async function fetchTransactions() {
+        if (!user) return;
+        try {
+            const list = await api(`/api/users/${user.id}/transactions`);
+            setTransactions(list);
+        } catch (error) {
+            console.warn("Could not fetch transactions", error);
+        }
+    }
+
+    async function topUpWallet(amount, method, details) {
+        if (!user) return;
+        const res = await api(`/api/users/${user.id}/wallet/topup`, {
+            method: "POST",
+            body: JSON.stringify({ amount, method, details })
+        });
+        setUser(prev => ({ ...prev, walletBalance: res.walletBalance }));
+        await fetchTransactions();
+    }
 
     async function submitAuth(form) {
         setAuthMessage("");
@@ -1124,12 +1414,23 @@ function App() {
         await refreshDriver();
     }
 
-    async function payRide(id) {
+    async function refreshUserProfile() {
+        if (!user) return;
+        try {
+            const updatedProfile = await api(`/api/users/${user.id}`);
+            setUser(prev => ({ ...prev, ...updatedProfile }));
+        } catch (error) {
+            console.warn("Could not refresh user profile", error);
+        }
+    }
+
+    async function payRide(id, method, details) {
         await api(`/api/rides/${id}/pay`, {
             method: "PATCH",
-            body: JSON.stringify({ method: paymentMethod })
+            body: JSON.stringify({ method: method || paymentMethod, details: details || "" })
         });
         await refreshRider();
+        await refreshUserProfile();
     }
 
     async function cancelRide(id) {
@@ -1169,7 +1470,8 @@ function App() {
     useEffect(() => {
         if (!user || !sessionToken) return;
         const protocol = window.location.protocol === "https:" ? "wss" : "ws";
-        const socket = new WebSocket(`${protocol}://${window.location.host}/ws/rides?token=${encodeURIComponent(sessionToken)}`);
+        const host = window.location.host.includes("localhost:8081") ? window.location.host : "localhost:8081";
+        const socket = new WebSocket(`${protocol}://${host}/ws/rides?token=${encodeURIComponent(sessionToken)}`);
         socket.addEventListener("open", () => {
             setLiveStatus("Live updates connected");
             socket.send(JSON.stringify({ type: "PING" }));
@@ -1208,7 +1510,7 @@ function App() {
     const view = user ? user.role.toLowerCase() : "auth";
 
     return h(React.Fragment, null,
-        h(Topbar, { user, view, onLogout: () => window.location.reload() }),
+        h(Topbar, { user, view, onLogout: () => window.location.reload(), onWalletClick: (tab) => setActiveTab(tab) }),
         h("main", { className: "shell" },
             !user ? h(AuthView, { role, setRole, authMode, setAuthMode, onSubmit: submitAuth, message: authMessage }) : null,
             user?.role === "RIDER" ? h(RiderDashboard, {
@@ -1217,11 +1519,22 @@ function App() {
                 availableDrivers, latestRide, status: riderStatus, loadEstimates, requestRide,
                 refreshRider, paymentMethod, setPaymentMethod, payRide, cancelRide, rateRide,
                 ridesCount,
-                liveStatus
+                liveStatus,
+                activeTab,
+                setActiveTab,
+                transactions,
+                fetchTransactions,
+                topUpWallet,
+                user
             }) : null,
             user?.role === "DRIVER" ? h(DriverDashboard, {
                 driver, requests: driverRequests, trips: driverTrips, refreshDriver,
-                acceptRide, startRide, progressRide, completeRide, toggleDriverDuty, driverMessage, liveStatus
+                acceptRide, startRide, progressRide, completeRide, toggleDriverDuty, driverMessage, liveStatus,
+                activeTab,
+                setActiveTab,
+                transactions,
+                fetchTransactions,
+                user
             }) : null
         )
     );

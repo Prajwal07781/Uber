@@ -25,7 +25,8 @@ public class DataSeeder implements CommandLineRunner {
             return;
         }
 
-        AppUser rider = userRepository.save(new AppUser("Prajwal Rider", "9000000001", Role.RIDER));
+        AppUser rider = new AppUser("Prajwal Rider", "9000000001", Role.RIDER);
+        rider.setWalletBalance(1500.0);
         userRepository.save(rider);
 
         seedDriver("Aarav Driver", "9000000101", "KA 05 AB 1234", "Royal Enfield Hunter", VehicleType.BIKE, 12.9716, 77.5946);
@@ -36,7 +37,9 @@ public class DataSeeder implements CommandLineRunner {
 
     private void seedDriver(String name, String phone, String vehicleNumber, String vehicleName, VehicleType type,
                             double lat, double lng) {
-        AppUser user = userRepository.save(new AppUser(name, phone, Role.DRIVER));
-        driverRepository.save(new DriverProfile(user, vehicleNumber, vehicleName, type, lat, lng));
+        AppUser user = new AppUser(name, phone, Role.DRIVER);
+        user.setWalletBalance(500.0);
+        AppUser savedUser = userRepository.save(user);
+        driverRepository.save(new DriverProfile(savedUser, vehicleNumber, vehicleName, type, lat, lng));
     }
 }

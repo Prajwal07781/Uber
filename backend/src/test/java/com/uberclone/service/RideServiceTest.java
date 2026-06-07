@@ -5,6 +5,7 @@ import com.uberclone.model.Ride;
 import com.uberclone.model.RideStatus;
 import com.uberclone.repository.AppUserRepository;
 import com.uberclone.repository.DriverProfileRepository;
+import com.uberclone.repository.PaymentTransactionRepository;
 import com.uberclone.repository.RideRepository;
 import com.uberclone.websocket.RideEventPublisher;
 import org.junit.jupiter.api.Test;
@@ -28,6 +29,7 @@ class RideServiceTest {
                 mock(RideRepository.class),
                 mock(AppUserRepository.class),
                 driverRepository,
+                mock(PaymentTransactionRepository.class),
                 mock(GeoService.class),
                 mock(RideEventPublisher.class)
         );
@@ -49,6 +51,7 @@ class RideServiceTest {
                 rideRepository,
                 mock(AppUserRepository.class),
                 driverRepository,
+                mock(PaymentTransactionRepository.class),
                 mock(GeoService.class),
                 mock(RideEventPublisher.class)
         );
@@ -75,6 +78,7 @@ class RideServiceTest {
                 rideRepository,
                 mock(AppUserRepository.class),
                 driverRepository,
+                mock(PaymentTransactionRepository.class),
                 mock(GeoService.class),
                 mock(RideEventPublisher.class)
         );
@@ -98,14 +102,6 @@ class RideServiceTest {
         assertThat(driver.isAvailable()).isFalse();
     }
 
-    private Ride completedRide(long durationMinutes) {
-        Ride ride = new Ride();
-        ride.setStatus(RideStatus.COMPLETED);
-        ride.setCompletedAt(LocalDate.now().atTime(12, 0));
-        ride.setDurationMinutes(durationMinutes);
-        return ride;
-    }
-
     @Test
     void completeRideAddsActualDurationWhenGreaterThanEta() {
         RideRepository rideRepository = mock(RideRepository.class);
@@ -114,6 +110,7 @@ class RideServiceTest {
                 rideRepository,
                 mock(AppUserRepository.class),
                 driverRepository,
+                mock(PaymentTransactionRepository.class),
                 mock(GeoService.class),
                 mock(RideEventPublisher.class)
         );

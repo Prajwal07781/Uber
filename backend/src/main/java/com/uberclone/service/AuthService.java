@@ -30,7 +30,13 @@ public class AuthService {
             throw new IllegalArgumentException("Account already exists for this phone and role");
         }
 
-        AppUser user = userRepository.save(new AppUser(request.name(), request.phone(), request.password(), request.role()));
+        AppUser newUser = new AppUser(request.name(), request.phone(), request.password(), request.role());
+        if (request.role() == Role.RIDER) {
+            newUser.setWalletBalance(1000.0); // starter balance for Rider
+        } else {
+            newUser.setWalletBalance(500.0); // starter balance for Driver
+        }
+        AppUser user = userRepository.save(newUser);
         Long driverId = null;
         if (request.role() == Role.DRIVER) {
             VehicleType type = request.vehicleType() == null || request.vehicleType().isBlank()
