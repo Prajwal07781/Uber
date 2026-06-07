@@ -1,0 +1,9 @@
+.git
+.github
+.vscode
+backend/target
+backend/data
+backend/*.log
+backend/*.err.log
+*.log
+*.err.log
