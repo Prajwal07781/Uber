@@ -32,7 +32,7 @@ function cx(...parts) {
     return parts.filter(Boolean).join(" ");
 }
 
-const BASE_URL = window.location.origin.includes("localhost:8081") ? "" : "http://localhost:8081";
+const BASE_URL = "";
 
 async function api(path, options = {}) {
     const headers = { "Content-Type": "application/json", ...(options.headers || {}) };
