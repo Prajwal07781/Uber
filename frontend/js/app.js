@@ -1618,7 +1618,7 @@ function App() {
     useEffect(() => {
         if (!user || !sessionToken) return;
         const protocol = window.location.protocol === "https:" ? "wss" : "ws";
-        const host = window.location.host.includes("localhost:8081") ? window.location.host : "localhost:8081";
+const host = window.location.host;
         const socket = new WebSocket(`${protocol}://${host}/ws/rides?token=${encodeURIComponent(sessionToken)}`);
         socket.addEventListener("open", () => {
             setLiveStatus("Live updates connected");
