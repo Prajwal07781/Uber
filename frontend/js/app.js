@@ -79,6 +79,18 @@ function workStatusLabel(status) {
     }[status] || status;
 }
 
+function verificationLabel(status = "PENDING_REVIEW") {
+    return {
+        VERIFIED: "Background verified",
+        PENDING_REVIEW: "Review pending",
+        REJECTED: "Verification rejected"
+    }[status] || "Review pending";
+}
+
+function VerificationBadge({ status = "PENDING_REVIEW" }) {
+    return h("span", { className: cx("verification-badge", status) }, verificationLabel(status));
+}
+
 function shortName(value = "") {
     return value.split(",").slice(0, 2).join(",").trim();
 }
@@ -173,11 +185,18 @@ function AuthView({ role, setRole, authMode, setAuthMode, onSubmit, message }) {
         password: "password",
         vehicleName: "",
         vehicleNumber: "",
-        vehicleType: "CAB"
+        vehicleType: "CAB",
+        drivingLicenseNumber: "",
+        rcNumber: "",
+        insurancePolicyNumber: "",
+        accidentCount: "0",
+        challanCount: "0"
     });
 
     const [activeSafetyTab, setActiveSafetyTab] = useState("otp");
     const [copiedCode, setCopiedCode] = useState(null);
+    const [backgroundCheck, setBackgroundCheck] = useState(null);
+    const [checkingBackground, setCheckingBackground] = useState(false);
 
     function copyPromoCode(code) {
         navigator.clipboard.writeText(code);
@@ -187,14 +206,56 @@ function AuthView({ role, setRole, authMode, setAuthMode, onSubmit, message }) {
 
     useEffect(() => {
         setForm(current => ({ ...current, phone: role === "RIDER" ? "9000000001" : "9000000101" }));
+        setBackgroundCheck(null);
     }, [role]);
+
+    useEffect(() => {
+        setBackgroundCheck(null);
+    }, [authMode]);
 
     function update(field, value) {
         setForm(current => ({ ...current, [field]: value }));
+        if (["vehicleNumber", "drivingLicenseNumber", "rcNumber", "insurancePolicyNumber"].includes(field)) {
+            setBackgroundCheck(null);
+        }
     }
 
-    function submit(event) {
+    function backgroundPayload(current = form) {
+        return {
+            driverName: current.name,
+            vehicleNumber: current.vehicleNumber,
+            drivingLicenseNumber: current.drivingLicenseNumber,
+            rcNumber: current.rcNumber,
+            insurancePolicyNumber: current.insurancePolicyNumber,
+            accidentCount: Number(current.accidentCount) || 0,
+            challanCount: Number(current.challanCount) || 0
+        };
+    }
+
+    async function runBackgroundCheck(current = form) {
+        setCheckingBackground(true);
+        try {
+            const result = await api("/api/auth/driver-background-check", {
+                method: "POST",
+                body: JSON.stringify(backgroundPayload(current))
+            });
+            setBackgroundCheck(result);
+            return result;
+        } catch (error) {
+            const result = { approved: false, status: "REJECTED", message: error.message };
+            setBackgroundCheck(result);
+            return result;
+        } finally {
+            setCheckingBackground(false);
+        }
+    }
+
+    async function submit(event) {
         event.preventDefault();
+        if (authMode === "signup" && role === "DRIVER") {
+            const result = await runBackgroundCheck(form);
+            if (!result.approved) return;
+        }
         onSubmit(form);
     }
 
@@ -292,7 +353,56 @@ function AuthView({ role, setRole, authMode, setAuthMode, onSubmit, message }) {
                         )
                     })
                 ) : null,
-                h("button", { className: "primary", type: "submit" }, authMode === "login" ? "Login" : "Create account"),
+                authMode === "signup" && role === "DRIVER" ? h("div", { className: "background-check wide" },
+                    h("div", { className: "grid two" },
+                        Field({
+                            label: "Driving license",
+                            children: h("input", {
+                                value: form.drivingLicenseNumber,
+                                onChange: event => update("drivingLicenseNumber", event.target.value),
+                                placeholder: "DLKA20240001",
+                                required: true
+                            })
+                        }),
+                        Field({
+                            label: "RC number",
+                            children: h("input", {
+                                value: form.rcNumber,
+                                onChange: event => update("rcNumber", event.target.value),
+                                placeholder: "RCKA05AB1234",
+                                required: true
+                            })
+                        })
+                    ),
+                    Field({
+                        label: "Insurance policy",
+                        className: "wide",
+                        children: h("input", {
+                            value: form.insurancePolicyNumber,
+                            onChange: event => update("insurancePolicyNumber", event.target.value),
+                            placeholder: "INS-2026-0001",
+                            required: true
+                        })
+                    }),
+                    h("button", {
+                        type: "button",
+                        className: "check-btn",
+                        onClick: () => runBackgroundCheck(),
+                        disabled: checkingBackground
+                    }, checkingBackground ? "Checking..." : "Check background"),
+                    backgroundCheck ? h("div", {
+                        className: cx("verification-result",
+                            backgroundCheck.status === "VERIFIED" ? "approved" :
+                                backgroundCheck.status === "PENDING_REVIEW" ? "pending" : "rejected"),
+                        role: "status"
+                    },
+                        h("strong", null, backgroundCheck.status),
+                        h("span", null, backgroundCheck.message),
+                        h("small", null, `Accidents ${backgroundCheck.accidentCount} | Challans ${backgroundCheck.challanCount} | ${backgroundCheck.registrySource}`)
+                    ) : null
+                ) : null,
+                h("button", { className: "primary", type: "submit", disabled: checkingBackground },
+                    authMode === "login" ? "Login" : role === "DRIVER" ? "Verify and create account" : "Create account"),
                 h("p", { className: "message", role: "status" }, message)
             )
         ),
@@ -647,7 +757,10 @@ function DriverCard({ driver }) {
     return h("article", { className: "driver-card" },
         h("div", { className: "driver-head" },
             h("strong", null, driver.name),
-            h("span", { className: "pill" }, driver.vehicleLabel)
+            h("span", { className: "driver-badges" },
+                h(VerificationBadge, { status: driver.verificationStatus }),
+                h("span", { className: "pill" }, driver.vehicleLabel)
+            )
         ),
         h("div", { className: "driver-line" },
             h("img", { src: vehicleImages[driver.vehicleType], alt: driver.vehicleLabel }),
@@ -658,6 +771,7 @@ function DriverCard({ driver }) {
             h("span", null, `${formatWorkMinutes(driver.workMinutesToday)} today`),
             h(SafetyBadge, { status: driver.workStatus })
         ),
+        h("span", { className: "subtle" }, `Registry: accidents ${driver.accidentCount || 0} | challans ${driver.challanCount || 0}`),
         driver.pickupDistanceKm !== undefined ? h("div", { className: "match-row" },
             h("span", null, `${driver.pickupDistanceKm} km from pickup`),
             h("span", null, `${driver.etaToPickupMinutes} min arrival`),
@@ -1049,7 +1163,7 @@ function RiderDashboard(props) {
                     drop: latestRide ? ridePoint(latestRide, "drop") : drop,
                     progress: latestRide?.progressPercent || 0
                 }),
-                h("div", { className: "panel" },
+                h("div", { className: "panel available-drivers-panel" },
                     SectionTitle({ title: "Available Drivers", meta: `${availableDrivers.length} online` }),
                     h("div", { className: "driver-list" },
                         availableDrivers.length
@@ -1067,6 +1181,34 @@ function RiderDashboard(props) {
                     )
                 )
             )
+    );
+}
+
+function DriverVerificationPanel({ driver }) {
+    const checks = [
+        ["License", driver?.licenseValid],
+        ["RC", driver?.rcValid],
+        ["Insurance", driver?.insuranceValid],
+        ["Blacklist", !driver?.vehicleBlacklisted]
+    ];
+    return h("div", { className: "panel driver-verification-panel" },
+        SectionTitle({
+            title: "Background Verification",
+            meta: driver?.verificationMessage || "Verification profile will load after login.",
+            action: h(VerificationBadge, { status: driver?.verificationStatus })
+        }),
+        h("div", { className: "verification-grid" },
+            h("div", null, h("strong", null, driver?.drivingLicenseNumber || "Pending"), h("span", null, "Driving license")),
+            h("div", null, h("strong", null, driver?.rcNumber || "Pending"), h("span", null, "RC number")),
+            h("div", null, h("strong", null, driver?.insurancePolicyNumber || "Pending"), h("span", null, "Insurance policy")),
+            h("div", null, h("strong", null, `${driver?.accidentCount || 0} / ${driver?.challanCount || 0}`), h("span", null, "Accidents / challans"))
+        ),
+        h("div", { className: "verification-checks" },
+            checks.map(([label, passed]) => h("span", {
+                key: label,
+                className: cx("verification-check", passed ? "passed" : "failed")
+            }, `${label}: ${passed ? "Clear" : "Needs review"}`))
+        )
     );
 }
 
@@ -1180,6 +1322,7 @@ function DriverDashboard(props) {
               )
             : h(React.Fragment, null,
                 h(DriverSafetyPanel, { driver, onToggle: toggleDriverDuty }),
+                h(DriverVerificationPanel, { driver }),
                 h(SafetyWarning, { status: driver?.workStatus, audience: "driver" }),
                 driverMessage ? h("div", { className: "status-banner", role: "status" },
                     h("div", { className: "status-icon" }),
@@ -1270,7 +1413,12 @@ function App() {
                 role,
                 vehicleName: form.vehicleName,
                 vehicleNumber: form.vehicleNumber,
-                vehicleType: form.vehicleType
+                vehicleType: form.vehicleType,
+                drivingLicenseNumber: form.drivingLicenseNumber,
+                rcNumber: form.rcNumber,
+                insurancePolicyNumber: form.insurancePolicyNumber,
+                accidentCount: Number(form.accidentCount) || 0,
+                challanCount: Number(form.challanCount) || 0
             };
             const loggedIn = await api(`/api/auth/${authMode === "login" ? "login" : "signup"}`, {
                 method: "POST",

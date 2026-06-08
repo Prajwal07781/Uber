@@ -33,6 +33,23 @@ public class DriverProfile {
     @Enumerated(EnumType.STRING)
     private VehicleType vehicleType;
 
+    private String drivingLicenseNumber = "DL-PENDING";
+
+    private String rcNumber = "RC-PENDING";
+
+    private String insurancePolicyNumber = "INS-PENDING";
+
+    @Enumerated(EnumType.STRING)
+    private DriverVerificationStatus verificationStatus = DriverVerificationStatus.VERIFIED;
+
+    private String verificationMessage = "Seeded driver profile verified.";
+    private Integer accidentCount = 0;
+    private Integer challanCount = 0;
+    private Boolean licenseValid = true;
+    private Boolean rcValid = true;
+    private Boolean insuranceValid = true;
+    private Boolean vehicleBlacklisted = false;
+
     private double latitude;
     private double longitude;
     private boolean available = true;
@@ -75,6 +92,96 @@ public class DriverProfile {
 
     public VehicleType getVehicleType() {
         return vehicleType;
+    }
+
+    public String getDrivingLicenseNumber() {
+        return drivingLicenseNumber == null || drivingLicenseNumber.isBlank() ? "DL-PENDING" : drivingLicenseNumber;
+    }
+
+    public void setDrivingLicenseNumber(String drivingLicenseNumber) {
+        this.drivingLicenseNumber = drivingLicenseNumber;
+    }
+
+    public String getRcNumber() {
+        return rcNumber == null || rcNumber.isBlank() ? "RC-PENDING" : rcNumber;
+    }
+
+    public void setRcNumber(String rcNumber) {
+        this.rcNumber = rcNumber;
+    }
+
+    public String getInsurancePolicyNumber() {
+        return insurancePolicyNumber == null || insurancePolicyNumber.isBlank() ? "INS-PENDING" : insurancePolicyNumber;
+    }
+
+    public void setInsurancePolicyNumber(String insurancePolicyNumber) {
+        this.insurancePolicyNumber = insurancePolicyNumber;
+    }
+
+    public DriverVerificationStatus getVerificationStatus() {
+        return verificationStatus == null ? DriverVerificationStatus.VERIFIED : verificationStatus;
+    }
+
+    public void setVerificationStatus(DriverVerificationStatus verificationStatus) {
+        this.verificationStatus = verificationStatus;
+    }
+
+    public String getVerificationMessage() {
+        return verificationMessage == null || verificationMessage.isBlank()
+                ? "Driver background verification is clear."
+                : verificationMessage;
+    }
+
+    public void setVerificationMessage(String verificationMessage) {
+        this.verificationMessage = verificationMessage;
+    }
+
+    public int getAccidentCount() {
+        return accidentCount == null ? 0 : accidentCount;
+    }
+
+    public void setAccidentCount(int accidentCount) {
+        this.accidentCount = accidentCount;
+    }
+
+    public int getChallanCount() {
+        return challanCount == null ? 0 : challanCount;
+    }
+
+    public void setChallanCount(int challanCount) {
+        this.challanCount = challanCount;
+    }
+
+    public boolean isLicenseValid() {
+        return licenseValid == null || licenseValid;
+    }
+
+    public void setLicenseValid(boolean licenseValid) {
+        this.licenseValid = licenseValid;
+    }
+
+    public boolean isRcValid() {
+        return rcValid == null || rcValid;
+    }
+
+    public void setRcValid(boolean rcValid) {
+        this.rcValid = rcValid;
+    }
+
+    public boolean isInsuranceValid() {
+        return insuranceValid == null || insuranceValid;
+    }
+
+    public void setInsuranceValid(boolean insuranceValid) {
+        this.insuranceValid = insuranceValid;
+    }
+
+    public boolean isVehicleBlacklisted() {
+        return vehicleBlacklisted != null && vehicleBlacklisted;
+    }
+
+    public void setVehicleBlacklisted(boolean vehicleBlacklisted) {
+        this.vehicleBlacklisted = vehicleBlacklisted;
     }
 
     public double getLatitude() {

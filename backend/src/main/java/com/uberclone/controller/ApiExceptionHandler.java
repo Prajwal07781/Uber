@@ -19,6 +19,6 @@ public class ApiExceptionHandler {
     @ExceptionHandler(MethodArgumentNotValidException.class)
     @ResponseStatus(HttpStatus.BAD_REQUEST)
     public Map<String, String> validation(MethodArgumentNotValidException exception) {
-        return Map.of("message", "Please fill all required ride details");
+        return Map.of("message", "Please fill all required details");
     }
 }

@@ -284,6 +284,17 @@ public class RideApiController {
         payload.put("seats", driver.getVehicleType().getSeats());
         payload.put("vehicle", driver.getVehicleName());
         payload.put("number", driver.getVehicleNumber());
+        payload.put("drivingLicenseNumber", driver.getDrivingLicenseNumber());
+        payload.put("rcNumber", driver.getRcNumber());
+        payload.put("insurancePolicyNumber", driver.getInsurancePolicyNumber());
+        payload.put("verificationStatus", driver.getVerificationStatus());
+        payload.put("verificationMessage", driver.getVerificationMessage());
+        payload.put("accidentCount", driver.getAccidentCount());
+        payload.put("challanCount", driver.getChallanCount());
+        payload.put("licenseValid", driver.isLicenseValid());
+        payload.put("rcValid", driver.isRcValid());
+        payload.put("insuranceValid", driver.isInsuranceValid());
+        payload.put("vehicleBlacklisted", driver.isVehicleBlacklisted());
         payload.put("available", driver.isAvailable());
         payload.put("onDuty", driver.isOnDuty());
         payload.put("latitude", driver.getLatitude());
